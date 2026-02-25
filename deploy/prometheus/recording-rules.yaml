@@ -1,0 +1,92 @@
+groups:
+  - name: orbit.rules
+    interval: 30s
+    rules:
+      - record: orbit:app_throughput_bytes_per_second:sum
+        expr: sum by (scenario, flow_type, source, target) (rate(orbit_app_bytes_sent_total[1m]))
+
+      - record: orbit:app_throughput_received_bytes_per_second:sum
+        expr: sum by (scenario, flow_type, source, target) (rate(orbit_app_bytes_received_total[1m]))
+
+      - record: orbit:app_request_latency_p50:quantile
+        expr: histogram_quantile(0.50, sum by (le, scenario, flow_type) (rate(orbit_app_request_duration_seconds_bucket[5m])))
+
+      - record: orbit:app_request_latency_p95:quantile
+        expr: histogram_quantile(0.95, sum by (le, scenario, flow_type) (rate(orbit_app_request_duration_seconds_bucket[5m])))
+
+      - record: orbit:app_request_latency_p99:quantile
+        expr: histogram_quantile(0.99, sum by (le, scenario, flow_type) (rate(orbit_app_request_duration_seconds_bucket[5m])))
+
+      - record: orbit:wire_rtt_seconds:avg
+        expr: avg by (source, target) (orbit_wire_rtt_seconds)
+
+      - record: orbit:wire_retransmit_rate:sum
+        expr: sum by (source, target) (rate(orbit_wire_segments_retransmitted_total[1m]))
+
+      - record: orbit:wire_loss_rate:sum
+        expr: sum by (source, target) (rate(orbit_wire_lost_packets_total[1m]))
+
+      - record: orbit:generator_bytes_per_second:sum
+        expr: sum by (flow_type) (rate(orbit_generator_bytes_total[1m]))
+
+      - record: orbit:generator_errors_per_second:sum
+        expr: sum by (flow_type) (rate(orbit_generator_errors_total[1m]))
+
+      - record: orbit:generator_latency_p95:quantile
+        expr: histogram_quantile(0.95, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[5m])))
+
+      - record: orbit:node_network_throughput:sum
+        expr: sum by (node, interface) (rate(orbit_node_ip_bytes_sent_total[1m]) + rate(orbit_node_ip_bytes_received_total[1m]))
+
+      - record: orbit:receiver_bytes_per_second:sum
+        expr: sum by (receiver_type) (rate(orbit_receiver_bytes_total[1m]))
+
+      - record: orbit:app_connections_active:sum
+        expr: sum(orbit_app_connections_active)
+
+  - name: orbit.alerts
+    rules:
+      - alert: OrbitHighRetransmitRate
+        expr: orbit:wire_retransmit_rate:sum > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High TCP retransmit rate between {{ $labels.source }} and {{ $labels.target }}"
+          description: "Retransmit rate is {{ $value }}/s for the last 5 minutes."
+
+      - alert: OrbitHighLatency
+        expr: orbit:app_request_latency_p95:quantile > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 request latency for {{ $labels.flow_type }}"
+          description: "p95 latency is {{ $value }}s."
+
+      - alert: OrbitGeneratorErrors
+        expr: orbit:generator_errors_per_second:sum > 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Generator errors detected for {{ $labels.flow_type }}"
+          description: "Error rate is {{ $value }}/s."
+
+      - alert: OrbitNoPeers
+        expr: orbit_peer_count == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No peers discovered in orbit cluster"
+          description: "Peer count has been 0 for 5 minutes."
+
+      - alert: OrbitChecksumErrors
+        expr: sum(increase(orbit_app_checksum_errors_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Checksum verification failures detected"
+          description: "{{ $value }} checksum errors in the last 5 minutes."

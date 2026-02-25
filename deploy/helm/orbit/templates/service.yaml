@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "orbit.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "orbit.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: {{ .Values.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+    - name: tcp-recv
+      port: {{ .Values.config.tcpReceiverPortStart }}
+      targetPort: tcp-recv
+      protocol: TCP
+    - name: udp-recv
+      port: {{ .Values.config.udpReceiverPortStart }}
+      targetPort: udp-recv
+      protocol: UDP
+    - name: http-echo
+      port: {{ add .Values.service.httpPort 1 }}
+      targetPort: http-echo
+      protocol: TCP
+  selector:
+    {{- include "orbit.selectorLabels" . | nindent 4 }}

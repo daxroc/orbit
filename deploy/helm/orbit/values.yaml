@@ -1,0 +1,167 @@
+replicaCount: 1
+
+mode: daemonset
+
+image:
+  repository: orbit
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+auth:
+  token: ""
+  existingSecret: ""
+  existingSecretKey: "token"
+
+config:
+  mode: cluster
+  logLevel: info
+  logFormat: json
+  grpcPort: 9090
+  httpPort: 8080
+  tcpReceiverPortStart: 10000
+  udpReceiverPortStart: 11000
+  probeInterval: 10s
+  discoveryPeriod: 5s
+  metricsProtected: false
+  activeScenario: ""
+
+scenarios:
+  baseline:
+    description: "Zero traffic — measure eBPF overhead with no application load"
+    eastWest: []
+    northSouth: []
+
+  steady-low:
+    description: "Low sustained load for long-running accuracy tests"
+    eastWest:
+      - type: tcp-stream
+        bandwidthMbps: 10
+        durationSeconds: 0
+        payloadBytes: 1400
+      - type: http
+        rps: 10
+        payloadBytes: 512
+    northSouth: []
+
+  steady-high:
+    description: "High sustained load for throughput accuracy"
+    eastWest:
+      - type: tcp-stream
+        bandwidthMbps: 100
+        connections: 8
+      - type: udp-stream
+        packetRate: 10000
+        packetSize: 1400
+      - type: http
+        rps: 1000
+        payloadBytes: 4096
+    northSouth: []
+
+  burst:
+    description: "Traffic spikes to test eBPF buffering/sampling behavior"
+    eastWest:
+      - type: tcp-stream
+        pattern: burst
+        burstDurationSeconds: 5
+        burstIntervalSeconds: 30
+        bandwidthMbps: 500
+    northSouth: []
+
+  connection-churn:
+    description: "Rapid connection lifecycle for conntrack validation"
+    eastWest:
+      - type: connection-churn
+        connectionsPerSecond: 500
+        holdDurationMs: 50
+    northSouth: []
+
+  protocol-matrix:
+    description: "All protocols simultaneously for completeness check"
+    eastWest:
+      - type: tcp-stream
+        bandwidthMbps: 50
+      - type: udp-stream
+        packetRate: 5000
+      - type: http
+        rps: 100
+      - type: grpc
+        rps: 100
+      - type: icmp
+        intervalMs: 100
+      - type: connection-churn
+        connectionsPerSecond: 100
+    northSouth: []
+
+northSouth:
+  satellites: []
+  targets: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+rbac:
+  create: true
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext:
+  capabilities:
+    add:
+      - NET_RAW
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65534
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 9090
+
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}
+  namespace: ""
+  honorLabels: true
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+satellite:
+  enabled: false
+  replicaCount: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

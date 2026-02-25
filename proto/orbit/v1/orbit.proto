@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package orbit.v1;
+
+option go_package = "github.com/daxroc/orbit/proto/orbit/v1;orbitv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+service OrbitService {
+  rpc Echo(EchoRequest) returns (EchoResponse);
+  rpc Register(PeerRegistration) returns (PeerRegistrationResponse);
+  rpc AssignSchedule(ProbeSchedule) returns (ProbeScheduleResponse);
+  rpc ReportStatus(StatusReport) returns (StatusReportResponse);
+  rpc StreamData(stream DataChunk) returns (stream DataChunk);
+}
+
+message EchoRequest {
+  bytes payload = 1;
+  google.protobuf.Timestamp sent_at = 2;
+  string source_id = 3;
+}
+
+message EchoResponse {
+  bytes payload = 1;
+  google.protobuf.Timestamp sent_at = 2;
+  google.protobuf.Timestamp received_at = 3;
+  string responder_id = 4;
+}
+
+message PeerRegistration {
+  string peer_id = 1;
+  string address = 2;
+  string node_name = 3;
+  string zone = 4;
+  repeated string capabilities = 5;
+  string mode = 6;
+}
+
+message PeerRegistrationResponse {
+  bool accepted = 1;
+  string leader_id = 2;
+}
+
+message FlowSpec {
+  string id = 1;
+  string type = 2;
+  string target_address = 3;
+  int32 target_port = 4;
+  string direction = 5;
+
+  int64 bandwidth_bps = 10;
+  int32 packet_rate = 11;
+  int32 packet_size = 12;
+  int32 rps = 13;
+  int32 payload_bytes = 14;
+  int32 connections = 15;
+  string http_method = 16;
+  bool keep_alive = 17;
+  string pattern = 18;
+  int32 burst_duration_seconds = 19;
+  int32 burst_interval_seconds = 20;
+  int32 connections_per_second = 21;
+  int32 hold_duration_ms = 22;
+
+  google.protobuf.Duration duration = 30;
+  google.protobuf.Duration interval = 31;
+}
+
+message ProbeSchedule {
+  string scenario_name = 1;
+  string run_id = 2;
+  repeated FlowSpec east_west_flows = 3;
+  repeated FlowSpec north_south_flows = 4;
+  google.protobuf.Timestamp start_at = 5;
+}
+
+message ProbeScheduleResponse {
+  bool accepted = 1;
+  string error = 2;
+}
+
+message StatusReport {
+  string peer_id = 1;
+  string scenario_name = 2;
+  string run_id = 3;
+  int32 active_flows = 4;
+  map<string, int64> bytes_sent = 5;
+  map<string, int64> bytes_received = 6;
+  google.protobuf.Timestamp reported_at = 7;
+}
+
+message StatusReportResponse {
+  bool acknowledged = 1;
+}
+
+message DataChunk {
+  string flow_id = 1;
+  bytes payload = 2;
+  int64 sequence = 3;
+  google.protobuf.Timestamp sent_at = 4;
+  bytes checksum = 5;
+}
