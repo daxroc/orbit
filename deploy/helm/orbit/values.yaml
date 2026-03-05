@@ -28,6 +28,8 @@ config:
   discoveryPeriod: 5s
   metricsProtected: false
   activeScenario: ""
+  scheduleLeaseTTL: 30s
+  heartbeatInterval: 10s
 
 scenarios:
   baseline:
@@ -96,8 +98,54 @@ scenarios:
         connectionsPerSecond: 100
     northSouth: []
 
+  ## Example: scenario with direct north-south flows. These are merged
+  ## with any registered satellite flows at activation time. Satellites
+  ## can be registered under northSouth.satellites below.
+  ## See deploy/compose/README.md for running an external satellite.
+  #
+  # north-south-direct:
+  #   description: "Direct north-south flows to an external endpoint"
+  #   eastWest: []
+  #   northSouth:
+  #     - type: http
+  #       url: "<EXTERNAL_HOST>:8080"
+  #       rps: 50
+  #       payloadBytes: 1024
+  #     - type: tcp-stream
+  #       address: "<EXTERNAL_HOST>:10000"
+  #       bandwidthMbps: 10
+  #       payloadBytes: 1400
+
 northSouth:
   satellites: []
+  ## Example: register an external satellite running via Docker Compose
+  ## (see deploy/compose/README.md). Satellite flows are started automatically
+  ## whenever any scenario is activated and appear in metrics with
+  ## direction="north-south". Target URLs/addresses are resolved from the
+  ## satellite's host + standard ports (override per-satellite if needed).
+  ## Auth defaults to the cluster's auth.token; set authToken to override.
+  ## NOTE: authToken is stored in plaintext in the ConfigMap. For
+  ## sensitive environments, use the same token as auth.token and
+  ## manage it via auth.existingSecret instead.
+  #
+  # satellites:
+  #   - name: satellite-01
+  #     host: "<SATELLITE_HOST>"
+  #     # httpPort: 8080       # default
+  #     # grpcPort: 9090       # default
+  #     # tcpPort: 10000       # default
+  #     # udpPort: 11000       # default
+  #     # authToken: ""        # defaults to auth.token
+  #     flows:
+  #       - type: http
+  #         rps: 50
+  #         payloadBytes: 1024
+  #       - type: tcp-stream
+  #         bandwidthMbps: 10
+  #         payloadBytes: 1400
+  #       - type: udp-stream
+  #         packetRate: 1000
+  #         packetSize: 1400
   targets: []
 
 serviceAccount:
@@ -133,6 +181,12 @@ serviceMonitor:
   labels: {}
   namespace: ""
   honorLabels: true
+  satelliteServiceMonitor:
+    enabled: false
+    interval: 15s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
 
 podDisruptionBudget:
   enabled: false

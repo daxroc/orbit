@@ -50,8 +50,10 @@ type Config struct {
 
 	MetricsProtected bool `mapstructure:"metrics-protected"`
 
-	ExternalTargets []ExternalTarget  `mapstructure:"external-targets"`
-	Satellites      []SatelliteTarget `mapstructure:"satellites"`
+	ScheduleLeaseTTL  time.Duration `mapstructure:"schedule-lease-ttl"`
+	HeartbeatInterval time.Duration `mapstructure:"heartbeat-interval"`
+
+	ExternalTargets []ExternalTarget `mapstructure:"external-targets"`
 }
 
 type ExternalTarget struct {
@@ -63,9 +65,57 @@ type ExternalTarget struct {
 }
 
 type SatelliteTarget struct {
-	Name    string    `mapstructure:"name"`
-	Address string    `mapstructure:"address"`
-	Flows   []FlowDef `mapstructure:"flows"`
+	Name      string    `mapstructure:"name" yaml:"name"`
+	Host      string    `mapstructure:"host" yaml:"host"`
+	HTTPPort  int       `mapstructure:"httpPort" yaml:"httpPort"`
+	GRPCPort  int       `mapstructure:"grpcPort" yaml:"grpcPort"`
+	TCPPort   int       `mapstructure:"tcpPort" yaml:"tcpPort"`
+	UDPPort   int       `mapstructure:"udpPort" yaml:"udpPort"`
+	AuthToken string    `mapstructure:"authToken" yaml:"authToken"`
+	Flows     []FlowDef `mapstructure:"flows" yaml:"flows"`
+}
+
+const (
+	DefaultHTTPPort = 8080
+	DefaultGRPCPort = 9090
+	DefaultTCPPort  = 10000
+	DefaultUDPPort  = 11000
+)
+
+func (s *SatelliteTarget) ResolveTarget(flowType string) string {
+	if s.Host == "" {
+		return ""
+	}
+	switch flowType {
+	case "http":
+		port := s.HTTPPort
+		if port == 0 {
+			port = DefaultHTTPPort
+		}
+		return fmt.Sprintf("%s:%d", s.Host, port)
+	case "grpc":
+		port := s.GRPCPort
+		if port == 0 {
+			port = DefaultGRPCPort
+		}
+		return fmt.Sprintf("%s:%d", s.Host, port)
+	case "tcp-stream", "connection-churn":
+		port := s.TCPPort
+		if port == 0 {
+			port = DefaultTCPPort
+		}
+		return fmt.Sprintf("%s:%d", s.Host, port)
+	case "udp-stream":
+		port := s.UDPPort
+		if port == 0 {
+			port = DefaultUDPPort
+		}
+		return fmt.Sprintf("%s:%d", s.Host, port)
+	case "icmp":
+		return s.Host
+	default:
+		return ""
+	}
 }
 
 type FlowDef struct {
@@ -89,25 +139,48 @@ type FlowDef struct {
 	IntervalMs           int    `mapstructure:"intervalMs" yaml:"intervalMs"`
 }
 
+type NorthSouthDistribution struct {
+	Mode           string `mapstructure:"mode" yaml:"mode"`
+	Percentage     int    `mapstructure:"percentage" yaml:"percentage"`
+	RotateInterval string `mapstructure:"rotateInterval" yaml:"rotateInterval"`
+}
+
+const (
+	NSDistModeOne        = "one"
+	NSDistModeAll        = "all"
+	NSDistModePercentage = "percentage"
+)
+
+func (d NorthSouthDistribution) EffectiveMode() string {
+	switch d.Mode {
+	case NSDistModeAll, NSDistModePercentage:
+		return d.Mode
+	default:
+		return NSDistModeOne
+	}
+}
+
 type Scenario struct {
-	Description string    `mapstructure:"description" yaml:"description"`
-	EastWest    []FlowDef `mapstructure:"eastWest" yaml:"eastWest"`
-	NorthSouth  []FlowDef `mapstructure:"northSouth" yaml:"northSouth"`
+	Description            string                 `mapstructure:"description" yaml:"description"`
+	EastWest               []FlowDef              `mapstructure:"eastWest" yaml:"eastWest"`
+	NorthSouth             []FlowDef              `mapstructure:"northSouth" yaml:"northSouth"`
+	NorthSouthDistribution NorthSouthDistribution `mapstructure:"northSouthDistribution" yaml:"northSouthDistribution"`
 }
 
 type ScenariosConfig struct {
 	ActiveScenario      string              `mapstructure:"activeScenario" yaml:"activeScenario"`
 	StabilizationPeriod string              `mapstructure:"stabilizationPeriod" yaml:"stabilizationPeriod"`
 	Scenarios           map[string]Scenario `mapstructure:"scenarios" yaml:"scenarios"`
+	Satellites          []SatelliteTarget   `mapstructure:"satellites" yaml:"satellites"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
 		Mode:                    ModeCluster,
-		GRPCPort:                9090,
-		HTTPPort:                8080,
-		TCPReceiverPortStart:    10000,
-		UDPReceiverPortStart:    11000,
+		GRPCPort:                DefaultGRPCPort,
+		HTTPPort:                DefaultHTTPPort,
+		TCPReceiverPortStart:    DefaultTCPPort,
+		UDPReceiverPortStart:    DefaultUDPPort,
 		ServiceName:             "orbit",
 		ProbeInterval:           10 * time.Second,
 		DiscoveryPeriod:         5 * time.Second,
@@ -120,6 +193,8 @@ func DefaultConfig() *Config {
 		LogFormat:               "json",
 		ScenariosConfigPath:     "/etc/orbit/scenarios.yaml",
 		MetricsProtected:        false,
+		ScheduleLeaseTTL:        30 * time.Second,
+		HeartbeatInterval:       10 * time.Second,
 	}
 }
 

@@ -101,9 +101,10 @@ flowchart LR
   Peer1 -- "north-south" --> Satellite
   Satellite -. "echo" .-> Peer1
 
-  Leader -. "/metrics" .-> Prom
-  Peer1 -. "/metrics" .-> Prom
-  PeerN -. "/metrics" .-> Prom
+  Prom -. "scrape /metrics" .-> Leader
+  Prom -. "scrape /metrics" .-> Peer1
+  Prom -. "scrape /metrics" .-> PeerN
+  Prom -. "scrape /metrics" .-> Satellite
 ```
 
 ## Configuration
@@ -132,6 +133,8 @@ All flags can also be set via environment variable (prefix `ORBIT_`, uppercase, 
 | `--scenarios-config-path` | — | `/etc/orbit/scenarios.yaml` | Path to scenarios YAML file |
 | ~~`--active-scenario`~~ | — | — | *Removed.* Set `activeScenario` in scenarios ConfigMap instead |
 | `--metrics-protected` | `ORBIT_METRICS_PROTECTED` | `false` | Require auth token for `/metrics` |
+| `--schedule-lease-ttl` | `ORBIT_SCHEDULE_LEASE_TTL` | `30s` | Peer stops generators if no heartbeat received within this duration |
+| `--heartbeat-interval` | `ORBIT_HEARTBEAT_INTERVAL` | `10s` | Leader sends schedule heartbeats to peers at this interval |
 
 ## Scenarios
 
@@ -145,6 +148,18 @@ helm upgrade orbit deploy/helm/orbit --reuse-values \
 ```
 
 Kubernetes propagates the ConfigMap update to all pods (~60s), and the leader automatically stops existing flows and activates the new scenario.
+
+### Schedule Lease
+
+The leader periodically heartbeats the current schedule to all peers (default every `10s`). Each peer tracks the last heartbeat time and enforces a lease TTL (default `30s`). If a peer loses contact with the leader — due to a network partition, leader crash, or leadership change — its lease expires and generators are stopped automatically. This prevents orphaned traffic flows from running indefinitely.
+
+```bash
+helm upgrade orbit deploy/helm/orbit --reuse-values \
+  --set config.scheduleLeaseTTL="30s" \
+  --set config.heartbeatInterval="10s"
+```
+
+Heartbeats are idempotent: peers recognize repeated schedules by `runID` and refresh their lease without restarting generators.
 
 Before distributing schedules, the leader waits for the peer mesh to stabilize — the discovered peer count must remain unchanged for `config.stabilizationPeriod` (default `10s`). This prevents partial mesh assignments when pods are still joining. Adjust it for larger clusters:
 
@@ -186,6 +201,32 @@ scenarios:
 | `icmp` | `intervalMs`, `packetSize` |
 | `connection-churn` | `connectionsPerSecond`, `holdDurationMs` |
 
+### Satellites
+
+Satellites are external Orbit instances (typically running via Docker Compose) that act as controlled north-south endpoints. Register them under `northSouth.satellites` in your Helm values — you only need to specify the host once and the target URLs are resolved automatically from well-known ports:
+
+```yaml
+northSouth:
+  satellites:
+    - name: satellite-01
+      host: "10.0.0.50"
+      # ports default to 8080/9090/10000/11000 — override if needed
+      # authToken: ""    # defaults to the cluster's auth.token
+      flows:
+        - type: http
+          rps: 50
+          payloadBytes: 1024
+        - type: tcp-stream
+          bandwidthMbps: 10
+          payloadBytes: 1400
+```
+
+Satellite flows are started automatically whenever any scenario is activated. They are merged with the scenario's own `northSouth` flows and appear in Prometheus metrics with `direction="north-south"`. Each satellite can optionally override the cluster auth token via `authToken`.
+
+To collect the satellite's own metrics (receiver-side bytes, active connections, checksum errors), enable `serviceMonitor.satelliteServiceMonitor.enabled` — see [Helm Values](#helm-values) below.
+
+To run a satellite outside the cluster, see `deploy/compose/README.md`.
+
 ## Endpoints
 
 | Path | Method | Auth | Description |
@@ -224,6 +265,9 @@ scenarios:
 | `orbit_app_checksum_errors_total` | counter | flow_type, protocol, source, target | Payload checksum verification failures |
 
 ### Wire Layer (Linux only, TCP_INFO)
+
+Wire-layer byte and segment counters require **Linux kernel 4.2+** for the extended `tcp_info` fields (`bytes_sent`, `bytes_received`, `bytes_retrans`, `segs_out`). On older kernels these counters report zero but all other TCP_INFO metrics (RTT, cwnd, MSS, etc.) still work.
+
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `orbit_wire_rtt_seconds` | gauge | source, target, protocol | Smoothed TCP round-trip time |
@@ -282,8 +326,12 @@ See `deploy/helm/orbit/values.yaml` for all configurable values. Key options:
 - `auth.token` / `auth.existingSecret` — Bearer token configuration
 - `config.activeScenario` — Active scenario (set in ConfigMap, hot-reloaded without restart)
 - `config.stabilizationPeriod` — Time the peer mesh must be stable before distributing schedules (default `10s`)
-- `serviceMonitor.enabled` — Create Prometheus ServiceMonitor
-- `satellite.enabled` — Deploy a satellite instance
+- `config.scheduleLeaseTTL` — Peer stops generators if no leader heartbeat received within this duration (default `30s`)
+- `config.heartbeatInterval` — Leader sends schedule heartbeats to peers at this interval (default `10s`)
+- `northSouth.satellites` — Register external satellite endpoints with their traffic flows (hot-reloaded)
+- `serviceMonitor.enabled` — Create Prometheus ServiceMonitor for orbit pods
+- `serviceMonitor.satelliteServiceMonitor.enabled` — Create ServiceMonitor + headless Service + Endpoints for external satellites (IPs sourced from `northSouth.satellites[].host`). Supports `labels` and `annotations` for Prometheus Operator discovery
+- `satellite.enabled` — Deploy a satellite instance inside the cluster
 - `securityContext.capabilities.add: [NET_RAW]` — Required for ICMP
 
 ## Make Targets
@@ -323,6 +371,7 @@ orbit/
 │   └── server/                     # HTTP & gRPC servers
 ├── proto/orbit/v1/                 # Protobuf service & message definitions
 ├── deploy/
+│   ├── compose/                    # Docker Compose for external satellite
 │   ├── helm/orbit/                 # Helm chart (DaemonSet, Deployment, Satellite)
 │   ├── grafana/                    # Grafana dashboard JSON
 │   └── prometheus/                 # Recording rules & alerting rules

@@ -70,12 +70,13 @@ func (m *Manager) Count() int {
 }
 
 type Labels struct {
-	Scenario string
-	RunID    string
-	FlowType string
-	Protocol string
-	Source   string
-	Target   string
+	Scenario  string
+	RunID     string
+	FlowType  string
+	Protocol  string
+	Source    string
+	Target    string
+	Direction string
 }
 
 func (l Labels) String() string {

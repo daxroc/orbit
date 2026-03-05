@@ -1,0 +1,19 @@
+services:
+  satellite:
+    image: dcroche/orbit:latest
+    command: ["--mode=satellite"]
+    environment:
+      ORBIT_AUTH_TOKEN: "${ORBIT_AUTH_TOKEN:-testing123}"
+      ORBIT_POD_NAME: "satellite-01"
+      ORBIT_LOG_LEVEL: "info"
+      ORBIT_LOG_FORMAT: "text"
+      ORBIT_HTTP_PORT: "8080"
+      ORBIT_GRPC_PORT: "9090"
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+      - "10000:10000"
+      - "11000:11000"
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"

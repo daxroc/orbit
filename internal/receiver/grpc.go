@@ -88,7 +88,7 @@ func (s *grpcEchoServer) StreamData(stream orbitv1.OrbitService_StreamDataServer
 		metrics.ReceiverBytes.WithLabelValues("grpc").Add(float64(len(chunk.Payload)))
 
 		if len(chunk.Checksum) > 0 && !checksum.Verify(chunk.Payload, chunk.Checksum) {
-			metrics.ChecksumErrors.WithLabelValues("grpc", "grpc", "", chunk.FlowId).Inc()
+			metrics.ChecksumErrors.WithLabelValues("grpc", "grpc", "", "").Inc()
 			slog.Warn("checksum mismatch in stream", "flow_id", chunk.FlowId, "seq", chunk.Sequence)
 		}
 

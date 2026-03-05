@@ -18,8 +18,10 @@ const defaultStabilizationPeriod = 10 * time.Second
 type Engine struct {
 	mu                  sync.RWMutex
 	scenarios           map[string]config.Scenario
+	satellites          []config.SatelliteTarget
 	active              string
 	runID               string
+	configActive        string
 	stabilizationPeriod time.Duration
 	onActiveChange      ActiveChangeFunc
 }
@@ -52,17 +54,19 @@ func (e *Engine) LoadFromFile(path string) error {
 
 	e.mu.Lock()
 	e.scenarios = sc.Scenarios
+	e.satellites = sc.Satellites
 	e.stabilizationPeriod = stabPeriod
 	prevActive := e.active
 	configActive := sc.ActiveScenario
 	e.active = configActive
+	e.configActive = configActive
 	var cb ActiveChangeFunc
 	if configActive != prevActive {
 		cb = e.onActiveChange
 	}
 	e.mu.Unlock()
 
-	slog.Info("loaded scenarios", "count", len(e.scenarios), "activeScenario", configActive)
+	slog.Info("loaded scenarios", "count", len(e.scenarios), "satellites", len(sc.Satellites), "activeScenario", configActive)
 	for name, s := range sc.Scenarios {
 		slog.Info("scenario available",
 			"name", name,
@@ -70,6 +74,15 @@ func (e *Engine) LoadFromFile(path string) error {
 			"east_west_flows", len(s.EastWest),
 			"north_south_flows", len(s.NorthSouth),
 		)
+	}
+	for i, sat := range sc.Satellites {
+		if sat.Host == "" {
+			slog.Warn("satellite missing host, will be skipped at activation", "index", i, "name", sat.Name)
+		}
+		if sat.Name == "" {
+			slog.Warn("satellite missing name", "index", i, "host", sat.Host)
+		}
+		slog.Info("satellite registered", "name", sat.Name, "host", sat.Host, "flows", len(sat.Flows))
 	}
 
 	if cb != nil {
@@ -115,6 +128,12 @@ func (e *Engine) Active() (string, string) {
 	return e.active, e.runID
 }
 
+func (e *Engine) ConfigActive() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.configActive
+}
+
 func (e *Engine) StabilizationPeriod() time.Duration {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -122,6 +141,18 @@ func (e *Engine) StabilizationPeriod() time.Duration {
 		return defaultStabilizationPeriod
 	}
 	return e.stabilizationPeriod
+}
+
+func (e *Engine) Satellites() []config.SatelliteTarget {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := make([]config.SatelliteTarget, len(e.satellites))
+	for i, sat := range e.satellites {
+		out[i] = sat
+		out[i].Flows = make([]config.FlowDef, len(sat.Flows))
+		copy(out[i].Flows, sat.Flows)
+	}
+	return out
 }
 
 func (e *Engine) Clear() {

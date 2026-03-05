@@ -11,3 +11,7 @@ data:
     stabilizationPeriod: {{ .Values.config.stabilizationPeriod | default "10s" | quote }}
     scenarios:
       {{- toYaml .Values.scenarios | nindent 6 }}
+    {{- with .Values.northSouth.satellites }}
+    satellites:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}

@@ -31,3 +31,5 @@ type TCPInfoSnapshot struct {
 func (w *WireRecorder) CollectTCPInfo(_ net.Conn, _, _ string) *TCPInfoSnapshot {
 	return nil
 }
+
+func (w *WireRecorder) RemoveConn(_ net.Conn, _, _ string) {}

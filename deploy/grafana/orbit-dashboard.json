@@ -26,6 +26,7 @@
     },
     {
       "title": "Peer Count",
+      "description": "Number of discovered peers in the orbit mesh. Green (≥3) indicates a healthy quorum; yellow (1–2) may signal peer loss.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -38,6 +39,7 @@
     },
     {
       "title": "Leader",
+      "description": "Instance currently holding the leader-election lease. The leader coordinates scenario distribution and mesh assignments.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -47,6 +49,7 @@
     },
     {
       "title": "Active Scenario",
+      "description": "Currently running traffic scenario and its unique run ID. Empty when no scenario is activated.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -56,20 +59,22 @@
     },
     {
       "title": "Active Connections",
+      "description": "Total number of active TCP and gRPC connections across all generators cluster-wide.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum(orbit_app_connections_active)", "legendFormat": "connections" }
+        { "refId": "A", "expr": "sum(orbit_app_connections_active{scenario=~\"$scenario\", flow_type=~\"$flow_type\"})", "legendFormat": "connections" }
       ]
     },
     {
       "title": "Generator Errors",
+      "description": "Total generator errors in the last 5 minutes. Non-zero values (red) indicate failures in traffic generation such as connection refused or timeouts.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum(increase(orbit_generator_errors_total[5m]))", "legendFormat": "errors/5m" }
+        { "refId": "A", "expr": "sum(increase(orbit_generator_errors_total{flow_type=~\"$flow_type\"}[5m]))", "legendFormat": "errors/5m" }
       ],
       "fieldConfig": {
         "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
@@ -77,55 +82,97 @@
     },
     {
       "title": "Checksum Errors",
+      "description": "Payload checksum mismatches detected in the last 5 minutes. Non-zero values indicate data corruption between sender and receiver.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum(increase(orbit_app_checksum_errors_total[5m]))", "legendFormat": "errors/5m" }
+        { "refId": "A", "expr": "sum(increase(orbit_app_checksum_errors_total{flow_type=~\"$flow_type\"}[5m]))", "legendFormat": "errors/5m" }
       ],
       "fieldConfig": {
         "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
       }
     },
     {
-      "title": "Application Layer",
+      "title": "Application Layer — East-West",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "collapsed": false
     },
     {
-      "title": "App Throughput (bytes/sec)",
+      "title": "Bytes Sent Rate — East-West",
+      "description": "Application-layer send rate for east-west (pod-to-pod) traffic, broken down by flow type.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum by (source, target) (rate(orbit_app_bytes_sent_total[1m]))", "legendFormat": "{{source}} → {{target}}" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_app_bytes_sent_total{scenario=~\"$scenario\", direction=\"east-west\", flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "{{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
       }
     },
     {
-      "title": "App Bytes Received Rate",
+      "title": "Bytes Received Rate — East-West",
+      "description": "Application-layer receive rate for east-west (pod-to-pod) traffic, broken down by flow type.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum by (source, target) (rate(orbit_app_bytes_received_total[1m]))", "legendFormat": "{{source}} → {{target}}" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_app_bytes_received_total{scenario=~\"$scenario\", direction=\"east-west\", flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "{{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
       }
     },
     {
-      "title": "HTTP/gRPC Request Latency (p50/p95/p99)",
+      "title": "Application Layer — North-South",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false
+    },
+    {
+      "title": "Bytes Sent Rate — North-South",
+      "description": "Application-layer send rate for north-south (external/satellite) traffic, broken down by flow type.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p50" },
-        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" },
-        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p99" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_app_bytes_sent_total{scenario=~\"$scenario\", direction=\"north-south\", flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "{{flow_type}}" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "Bps" }
+      }
+    },
+    {
+      "title": "Bytes Received Rate — North-South",
+      "description": "Application-layer receive rate for north-south (external/satellite) traffic, broken down by flow type.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_app_bytes_received_total{scenario=~\"$scenario\", direction=\"north-south\", flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "{{flow_type}}" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "Bps" }
+      }
+    },
+    {
+      "title": "Application Layer — Latency & Packets",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "title": "HTTP/gRPC Request Latency (p50/p95/p99)",
+      "description": "End-to-end request latency percentiles for HTTP and gRPC flows, broken down by flow type.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le, flow_type) (rate(orbit_app_request_duration_seconds_bucket{scenario=~\"$scenario\", flow_type=~\"$flow_type\"}[$__rate_interval])))", "legendFormat": "p50 {{flow_type}}" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le, flow_type) (rate(orbit_app_request_duration_seconds_bucket{scenario=~\"$scenario\", flow_type=~\"$flow_type\"}[$__rate_interval])))", "legendFormat": "p95 {{flow_type}}" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le, flow_type) (rate(orbit_app_request_duration_seconds_bucket{scenario=~\"$scenario\", flow_type=~\"$flow_type\"}[$__rate_interval])))", "legendFormat": "p99 {{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -133,12 +180,13 @@
     },
     {
       "title": "Packets Sent/Received Rate",
+      "description": "UDP/ICMP packet send and receive rates, broken down by flow type. Divergence indicates packet loss.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(orbit_app_packets_sent_total[1m]))", "legendFormat": "sent/s" },
-        { "refId": "B", "expr": "sum(rate(orbit_app_packets_received_total[1m]))", "legendFormat": "recv/s" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_app_packets_sent_total{scenario=~\"$scenario\", flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "sent {{flow_type}}" },
+        { "refId": "B", "expr": "sum by (flow_type) (rate(orbit_app_packets_received_total{scenario=~\"$scenario\", flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "recv {{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "pps" }
@@ -147,13 +195,14 @@
     {
       "title": "Wire Layer (TCP_INFO)",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
       "collapsed": false
     },
     {
       "title": "Wire RTT",
+      "description": "TCP round-trip time sourced from TCP_INFO per connection. Reflects actual kernel-measured network latency between peers.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 23 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "orbit_wire_rtt_seconds", "legendFormat": "{{source}} → {{target}}" }
@@ -164,8 +213,9 @@
     },
     {
       "title": "Wire RTT Variance",
+      "description": "Variance in TCP round-trip time from TCP_INFO. High or spiking variance indicates network jitter or route instability.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 23 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "orbit_wire_rtt_variance_seconds", "legendFormat": "{{source}} → {{target}}" }
@@ -176,8 +226,9 @@
     },
     {
       "title": "Wire Congestion Window",
+      "description": "TCP congestion window size in segments from TCP_INFO. Sudden drops indicate congestion events or packet loss triggering cwnd reduction.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 23 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "orbit_wire_cwnd_segments", "legendFormat": "{{source}} → {{target}}" }
@@ -188,8 +239,9 @@
     },
     {
       "title": "Wire Retransmissions Rate",
+      "description": "Rate of TCP segment retransmissions and lost packets from TCP_INFO. Sustained retransmissions signal network congestion or link-layer errors.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "rate(orbit_wire_segments_retransmitted_total[1m])", "legendFormat": "{{source}} → {{target}}" },
@@ -201,8 +253,9 @@
     },
     {
       "title": "Wire Bytes Sent/Received Rate",
+      "description": "Kernel-reported TCP byte rates from TCP_INFO, independent of application counters. Compare with App Throughput to measure protocol overhead.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "sum by (source, target) (rate(orbit_wire_bytes_sent_total[1m]))", "legendFormat": "sent: {{source}} → {{target}}" },
@@ -215,13 +268,14 @@
     {
       "title": "Node / System",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
       "collapsed": false
     },
     {
       "title": "Node Interface Bytes Rate",
+      "description": "Per-node, per-interface IP byte rates from /proc/net. Shows total host-level traffic including non-orbit flows for context.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 50 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "rate(orbit_node_ip_bytes_sent_total[1m])", "legendFormat": "tx: {{node}}/{{interface}}" },
@@ -233,8 +287,9 @@
     },
     {
       "title": "Node TCP Opens Rate",
+      "description": "Rate of new TCP connections per node: active (outbound) and passive (inbound). Useful for validating connection-churn scenarios.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 50 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "rate(orbit_node_tcp_active_opens_total[1m])", "legendFormat": "active: {{node}}" },
@@ -247,16 +302,17 @@
     {
       "title": "Generator Metrics",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 48 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
       "collapsed": false
     },
     {
       "title": "Generator Bytes Rate by Type",
+      "description": "Bytes generated per second broken down by flow type (tcp-stream, udp-stream, http, grpc). Shows the traffic mix of the active scenario.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 49 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 59 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_generator_bytes_total[1m]))", "legendFormat": "{{flow_type}}" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_generator_bytes_total{flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "{{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
@@ -264,21 +320,23 @@
     },
     {
       "title": "Generator Errors Rate",
+      "description": "Rate of errors per flow type over time. Helps isolate which protocol or generator is experiencing failures.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 49 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 59 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_generator_errors_total[1m]))", "legendFormat": "{{flow_type}}" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_generator_errors_total{flow_type=~\"$flow_type\"}[$__rate_interval]))", "legendFormat": "{{flow_type}}" }
       ]
     },
     {
       "title": "Generator Latency (p50/p95)",
+      "description": "Generator-side send latency percentiles broken down by flow type. Measures the time each generator takes to complete a send operation.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 49 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 59 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[1m])))", "legendFormat": "p50 {{flow_type}}" },
-        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[1m])))", "legendFormat": "p95 {{flow_type}}" }
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket{flow_type=~\"$flow_type\"}[$__rate_interval])))", "legendFormat": "p50 {{flow_type}}" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket{flow_type=~\"$flow_type\"}[$__rate_interval])))", "legendFormat": "p95 {{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -287,13 +345,14 @@
     {
       "title": "Receiver Metrics",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 67 },
       "collapsed": false
     },
     {
       "title": "Receiver Bytes Rate",
+      "description": "Bytes received per second by receiver type. Should closely correlate with the corresponding Generator Bytes Rate when there is no loss.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 68 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "sum by (receiver_type) (rate(orbit_receiver_bytes_total[1m]))", "legendFormat": "{{receiver_type}}" }
@@ -304,8 +363,9 @@
     },
     {
       "title": "Receiver Connections Rate",
+      "description": "Rate of new connections accepted by each receiver type. Correlates with Node TCP Opens and is key for connection-churn validation.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 68 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         { "refId": "A", "expr": "sum by (receiver_type) (rate(orbit_receiver_connections_total[1m]))", "legendFormat": "{{receiver_type}}" }
@@ -331,6 +391,54 @@
         "refresh": 1,
         "regex": "",
         "type": "datasource"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(orbit_app_bytes_sent_total, scenario)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Scenario",
+        "multi": true,
+        "name": "scenario",
+        "options": [],
+        "query": "label_values(orbit_app_bytes_sent_total, scenario)",
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(orbit_app_bytes_sent_total, direction)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Direction",
+        "multi": true,
+        "name": "direction",
+        "options": [],
+        "query": "label_values(orbit_app_bytes_sent_total, direction)",
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(orbit_app_bytes_sent_total, flow_type)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Flow Type",
+        "multi": true,
+        "name": "flow_type",
+        "options": [],
+        "query": "label_values(orbit_app_bytes_sent_total, flow_type)",
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
       }
     ]
   },

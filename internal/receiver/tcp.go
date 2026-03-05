@@ -93,8 +93,9 @@ func (r *TCPReceiver) handleConn(ctx context.Context, conn net.Conn) {
 	defer r.recorder.RemoveConnection()
 	metrics.ReceiverConnections.WithLabelValues("tcp").Inc()
 
-	source := conn.RemoteAddr().String()
-	labels := []string{"", "", "tcp-stream", "tcp", source, conn.LocalAddr().String()}
+	source := stripPort(conn.RemoteAddr().String())
+	target := stripPort(conn.LocalAddr().String())
+	labels := []string{"", "", "tcp-stream", "tcp", source, target}
 
 	metrics.AppConnectionsActive.WithLabelValues(labels...).Inc()
 	defer metrics.AppConnectionsActive.WithLabelValues(labels...).Dec()
@@ -111,7 +112,7 @@ func (r *TCPReceiver) handleConn(ctx context.Context, conn net.Conn) {
 		if n > 0 {
 			r.recorder.AddBytesReceived(int64(n))
 			metrics.AppBytesReceived.WithLabelValues(
-				"", "", "tcp-stream", "tcp", source, conn.LocalAddr().String(), "east-west",
+				"", "", "tcp-stream", "tcp", source, target, "east-west",
 			).Add(float64(n))
 			metrics.ReceiverBytes.WithLabelValues("tcp").Add(float64(n))
 

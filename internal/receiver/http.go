@@ -84,17 +84,18 @@ func (r *HTTPReceiver) handleEcho(w http.ResponseWriter, req *http.Request) {
 	r.recorder.AddBytesReceived(int64(len(body)))
 	metrics.ReceiverBytes.WithLabelValues("http").Add(float64(len(body)))
 	metrics.ReceiverConnections.WithLabelValues("http").Inc()
-	source := req.RemoteAddr
+	source := stripPort(req.RemoteAddr)
+	target := stripPort(req.Host)
 
 	metrics.AppBytesReceived.WithLabelValues(
-		"", "", "http", "http", source, req.Host, "east-west",
+		"", "", "http", "http", source, target, "east-west",
 	).Add(float64(len(body)))
 
 	if csHeader := req.Header.Get("X-Orbit-Checksum"); csHeader != "" {
 		expected, err := hex.DecodeString(csHeader)
 		if err == nil && !checksum.Verify(body, expected) {
 			flowID := req.Header.Get("X-Orbit-Flow-ID")
-			metrics.ChecksumErrors.WithLabelValues("http", "http", source, req.Host).Inc()
+			metrics.ChecksumErrors.WithLabelValues("http", "http", source, target).Inc()
 			slog.Warn("checksum mismatch", "flow_id", flowID, "source", source)
 		}
 	}
@@ -106,6 +107,6 @@ func (r *HTTPReceiver) handleEcho(w http.ResponseWriter, req *http.Request) {
 
 	r.recorder.AddBytesSent(int64(n))
 	metrics.AppBytesSent.WithLabelValues(
-		"", "", "http", "http", req.Host, source, "east-west",
+		"", "", "http", "http", target, source, "east-west",
 	).Add(float64(n))
 }

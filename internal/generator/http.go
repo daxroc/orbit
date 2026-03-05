@@ -153,10 +153,10 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 	g.recorder.RemoveConnection()
 
 	metrics.AppBytesSent.WithLabelValues(
-		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, "east-west",
+		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 	).Add(float64(len(payload)))
 	metrics.AppBytesReceived.WithLabelValues(
-		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, "east-west",
+		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 	).Add(float64(len(body)))
 	metrics.AppRequestDuration.WithLabelValues(
 		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target,

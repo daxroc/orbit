@@ -79,6 +79,40 @@ func TestValidate_AllModes(t *testing.T) {
 	}
 }
 
+func TestSatelliteTarget_ResolveTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		sat      SatelliteTarget
+		flowType string
+		want     string
+	}{
+		{"http default port", SatelliteTarget{Host: "10.0.0.1"}, "http", "10.0.0.1:8080"},
+		{"http custom port", SatelliteTarget{Host: "10.0.0.1", HTTPPort: 9999}, "http", "10.0.0.1:9999"},
+		{"grpc default port", SatelliteTarget{Host: "10.0.0.1"}, "grpc", "10.0.0.1:9090"},
+		{"grpc custom port", SatelliteTarget{Host: "10.0.0.1", GRPCPort: 5050}, "grpc", "10.0.0.1:5050"},
+		{"tcp-stream default port", SatelliteTarget{Host: "10.0.0.1"}, "tcp-stream", "10.0.0.1:10000"},
+		{"tcp-stream custom port", SatelliteTarget{Host: "10.0.0.1", TCPPort: 20000}, "tcp-stream", "10.0.0.1:20000"},
+		{"connection-churn uses tcp port", SatelliteTarget{Host: "10.0.0.1"}, "connection-churn", "10.0.0.1:10000"},
+		{"connection-churn custom tcp port", SatelliteTarget{Host: "10.0.0.1", TCPPort: 20000}, "connection-churn", "10.0.0.1:20000"},
+		{"udp-stream default port", SatelliteTarget{Host: "10.0.0.1"}, "udp-stream", "10.0.0.1:11000"},
+		{"udp-stream custom port", SatelliteTarget{Host: "10.0.0.1", UDPPort: 22000}, "udp-stream", "10.0.0.1:22000"},
+		{"icmp returns host only", SatelliteTarget{Host: "10.0.0.1"}, "icmp", "10.0.0.1"},
+		{"unknown type returns empty", SatelliteTarget{Host: "10.0.0.1"}, "unknown", ""},
+		{"empty host returns empty for http", SatelliteTarget{Host: ""}, "http", ""},
+		{"empty host returns empty for tcp", SatelliteTarget{Host: ""}, "tcp-stream", ""},
+		{"empty host returns empty for icmp", SatelliteTarget{Host: ""}, "icmp", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.sat.ResolveTarget(tt.flowType)
+			if got != tt.want {
+				t.Errorf("ResolveTarget(%q) = %q, want %q", tt.flowType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoad_EnvOverrides(t *testing.T) {
 	os.Setenv("ORBIT_AUTH_TOKEN", "env-token")
 	os.Setenv("ORBIT_POD_NAME", "env-pod")

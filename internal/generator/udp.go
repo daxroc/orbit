@@ -105,7 +105,7 @@ func (g *UDPGenerator) Start(ctx context.Context) error {
 		g.recorder.AddBytesSent(int64(n))
 		g.recorder.AddPacketsSent(1)
 		metrics.AppBytesSent.WithLabelValues(
-			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, "east-west",
+			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 		).Add(float64(n))
 		metrics.GeneratorBytes.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Add(float64(n))
 		metrics.AppPacketsSent.WithLabelValues(

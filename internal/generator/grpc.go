@@ -112,10 +112,10 @@ func (g *GRPCGenerator) Start(ctx context.Context) error {
 		g.recorder.AddBytesReceived(int64(len(resp.Payload)))
 
 		metrics.AppBytesSent.WithLabelValues(
-			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, "east-west",
+			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 		).Add(float64(len(payload)))
 		metrics.AppBytesReceived.WithLabelValues(
-			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, "east-west",
+			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 		).Add(float64(len(resp.Payload)))
 		metrics.AppRequestDuration.WithLabelValues(
 			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target,

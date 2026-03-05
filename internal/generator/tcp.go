@@ -3,7 +3,6 @@ package generator
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -27,12 +26,13 @@ type TCPGenerator struct {
 	pattern   string
 	validator *auth.TokenValidator
 	recorder  *recorder.AppRecorder
+	wireRec   *recorder.WireRecorder
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
 }
 
-func NewTCPGenerator(flowID string, labels Labels, target string, bandwidthBps int64, payloadBytes, connections int, duration time.Duration, pattern string, validator *auth.TokenValidator, rec *recorder.AppRecorder) *TCPGenerator {
+func NewTCPGenerator(flowID string, labels Labels, target string, bandwidthBps int64, payloadBytes, connections int, duration time.Duration, pattern string, validator *auth.TokenValidator, rec *recorder.AppRecorder, wireRec *recorder.WireRecorder) *TCPGenerator {
 	if payloadBytes <= 0 {
 		payloadBytes = 1400
 	}
@@ -50,6 +50,7 @@ func NewTCPGenerator(flowID string, labels Labels, target string, bandwidthBps i
 		pattern:   pattern,
 		validator: validator,
 		recorder:  rec,
+		wireRec:   wireRec,
 	}
 }
 
@@ -99,7 +100,12 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		if g.wireRec != nil {
+			g.wireRec.RemoveConn(conn, g.target, g.labels.Protocol)
+		}
+		conn.Close()
+	}()
 
 	g.recorder.AddConnection()
 	defer g.recorder.RemoveConnection()
@@ -156,7 +162,7 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 		}
 
 		metrics.AppBytesSent.WithLabelValues(
-			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, "east-west",
+			g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 		).Add(float64(n))
 		metrics.GeneratorBytes.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Add(float64(n))
 
@@ -167,19 +173,24 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 			).Set(float64(bytesSinceReport))
 			bytesSinceReport = 0
 			lastReport = time.Now()
+
+			if g.wireRec != nil {
+				g.wireRec.CollectTCPInfo(conn, g.target, g.labels.Protocol)
+			}
 		}
 
 		_, _ = io.ReadFull(conn, make([]byte, 1))
 	}
 }
 
-func TCPLabels(scenario, runID, source, target string) Labels {
+func TCPLabels(scenario, runID, source, target, direction string) Labels {
 	return Labels{
-		Scenario: scenario,
-		RunID:    runID,
-		FlowType: "tcp-stream",
-		Protocol: "tcp",
-		Source:   source,
-		Target:   fmt.Sprintf("%s", target),
+		Scenario:  scenario,
+		RunID:     runID,
+		FlowType:  "tcp-stream",
+		Protocol:  "tcp",
+		Source:    source,
+		Target:    target,
+		Direction: direction,
 	}
 }

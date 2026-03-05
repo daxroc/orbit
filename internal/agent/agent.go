@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -19,9 +20,18 @@ import (
 	"github.com/daxroc/orbit/internal/scenario"
 	"github.com/daxroc/orbit/internal/server"
 	orbitv1 "github.com/daxroc/orbit/proto/orbit/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
+
+func stripPort(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
+}
 
 type Agent struct {
 	cfg         *config.Config
@@ -43,6 +53,11 @@ type Agent struct {
 	ctx      context.Context
 	isLeader bool
 	leaderID string
+
+	scheduleMu       sync.Mutex
+	activeRunID      string
+	lastScheduleTime time.Time
+	heartbeatCancel  context.CancelFunc
 }
 
 func New(cfg *config.Config) (*Agent, error) {
@@ -119,6 +134,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	switch a.cfg.Mode {
 	case config.ModeCluster:
+		go a.runScheduleLeaseWatchdog(ctx)
 		if err := a.runClusterMode(ctx); err != nil {
 			return err
 		}
@@ -136,6 +152,7 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) Stop(ctx context.Context) {
 	slog.Info("shutting down orbit agent")
 
+	a.stopHeartbeat()
 	if a.scenWatcher != nil {
 		a.scenWatcher.Stop()
 	}
@@ -217,7 +234,7 @@ func (a *Agent) onStartedLeading(ctx context.Context) {
 
 	slog.Info("elected as leader, will orchestrate scenarios")
 
-	scenarioName, _ := a.scenEngine.Active()
+	scenarioName := a.scenEngine.ConfigActive()
 	if scenarioName == "" {
 		scenarioName = a.cfg.ActiveScenario
 	}
@@ -242,7 +259,11 @@ func (a *Agent) onActiveScenarioChange(scenarioName string) {
 
 	if scenarioName == "" {
 		slog.Info("active scenario cleared, stopping flows")
+		a.stopHeartbeat()
 		a.genMgr.StopAll()
+		if err := a.coord.ClearAndDistribute(ctx); err != nil {
+			slog.Error("failed to distribute clear schedule", "error", err)
+		}
 		a.scenEngine.Clear()
 		return
 	}
@@ -289,81 +310,70 @@ func (a *Agent) activateScenario(ctx context.Context, scenarioName string) {
 	}
 
 	assignments := a.coord.BuildMeshAssignments(scenarioName, templates)
+
+	nsFlowSpecs := a.buildNSFlowSpecs(sc)
+	a.coord.BuildNorthSouthAssignments(sc.NorthSouthDistribution, nsFlowSpecs)
+
 	if err := a.coord.DistributeSchedule(ctx, scenarioName, assignments); err != nil {
 		slog.Error("failed to distribute schedule", "error", err)
 	}
 
-	a.startNorthSouthFlows(ctx, scenarioName, sc)
+	a.startHeartbeat(ctx)
 }
 
-func (a *Agent) startNorthSouthFlows(ctx context.Context, scenarioName string, sc config.Scenario) {
-	if len(sc.NorthSouth) == 0 {
-		return
-	}
+func (a *Agent) buildNSFlowSpecs(sc config.Scenario) []*orbitv1.FlowSpec {
+	var specs []*orbitv1.FlowSpec
+	flowID := 0
 
-	runID := fmt.Sprintf("%s-ns-%d", scenarioName, time.Now().UnixMilli())
-	slog.Info("starting north-south flows", "scenario", scenarioName, "flows", len(sc.NorthSouth))
-
-	for i, f := range sc.NorthSouth {
+	for _, f := range sc.NorthSouth {
 		target := f.URL
 		if target == "" {
 			target = f.Address
 		}
 		if target == "" {
-			slog.Warn("north-south flow missing target URL/address, skipping", "index", i)
+			slog.Warn("north-south flow has no target, skipping", "type", f.Type)
 			continue
 		}
-
-		labels := generator.Labels{
-			Scenario: scenarioName,
-			RunID:    runID,
-			FlowType: f.Type,
-			Protocol: f.Type,
-			Source:   a.cfg.PodName,
-			Target:   target,
-		}
-
-		var gen generator.Generator
-		dur := time.Duration(f.DurationSeconds) * time.Second
-
-		switch f.Type {
-		case "http":
-			gen = generator.NewHTTPGenerator(
-				fmt.Sprintf("ns-%d", i), labels, target,
-				f.RPS, f.PayloadBytes, f.HTTPMethod, f.KeepAlive,
-				dur, a.validator, a.appRec,
-			)
-		case "tcp-stream":
-			gen = generator.NewTCPGenerator(
-				fmt.Sprintf("ns-%d", i), labels, target,
-				int64(f.BandwidthMbps)*1_000_000, f.PayloadBytes, f.Connections,
-				dur, f.Pattern, a.validator, a.appRec,
-			)
-		case "udp-stream":
-			gen = generator.NewUDPGenerator(
-				fmt.Sprintf("ns-%d", i), labels, target,
-				f.PacketRate, f.PacketSize,
-				dur, a.validator, a.appRec,
-			)
-		case "icmp":
-			intervalMs := 1000
-			if f.IntervalMs > 0 {
-				intervalMs = f.IntervalMs
-			}
-			gen = generator.NewICMPGenerator(
-				fmt.Sprintf("ns-%d", i), labels, target,
-				intervalMs, dur, a.appRec,
-			)
-		default:
-			slog.Warn("unsupported north-south flow type", "type", f.Type)
-			continue
-		}
-
-		a.genMgr.Add(gen)
+		specs = append(specs, flowDefToFlowSpec(f, flowID, target, "north-south"))
+		flowID++
 	}
 
-	if err := a.genMgr.StartAll(ctx); err != nil {
-		slog.Error("failed to start north-south generators", "error", err)
+	for _, sat := range a.scenEngine.Satellites() {
+		for _, f := range sat.Flows {
+			target := sat.ResolveTarget(f.Type)
+			if target == "" {
+				slog.Warn("satellite flow has no resolved target, skipping", "satellite", sat.Name, "type", f.Type)
+				continue
+			}
+			specs = append(specs, flowDefToFlowSpec(f, flowID, target, "north-south"))
+			flowID++
+		}
+	}
+
+	return specs
+}
+
+func flowDefToFlowSpec(f config.FlowDef, id int, targetAddr, direction string) *orbitv1.FlowSpec {
+	return &orbitv1.FlowSpec{
+		Id:                   fmt.Sprintf("ns-%d", id),
+		Type:                 f.Type,
+		TargetAddress:        targetAddr,
+		Direction:            direction,
+		BandwidthBps:         int64(f.BandwidthMbps) * 1_000_000,
+		PacketRate:           int32(f.PacketRate),
+		PacketSize:           int32(f.PacketSize),
+		Rps:                  int32(f.RPS),
+		PayloadBytes:         int32(f.PayloadBytes),
+		Connections:          int32(f.Connections),
+		HttpMethod:           f.HTTPMethod,
+		KeepAlive:            f.KeepAlive,
+		Pattern:              f.Pattern,
+		BurstDurationSeconds: int32(f.BurstDurationSeconds),
+		BurstIntervalSeconds: int32(f.BurstIntervalSeconds),
+		ConnectionsPerSecond: int32(f.ConnectionsPerSecond),
+		HoldDurationMs:       int32(f.HoldDurationMs),
+		Duration:             durationpb.New(time.Duration(f.DurationSeconds) * time.Second),
+		Interval:             durationpb.New(time.Duration(f.IntervalMs) * time.Millisecond),
 	}
 }
 
@@ -418,6 +428,7 @@ func (a *Agent) onStoppedLeading() {
 	a.isLeader = false
 	a.mu.Unlock()
 
+	a.stopHeartbeat()
 	metrics.LeaderInfo.WithLabelValues(a.cfg.PodName).Set(0)
 	a.coord.SetActive(false)
 	a.genMgr.StopAll()
@@ -437,6 +448,17 @@ func (a *Agent) handleScheduleAssignment(_ context.Context, sched *orbitv1.Probe
 		"north_south_flows", len(sched.NorthSouthFlows),
 	)
 
+	a.scheduleMu.Lock()
+	isRefresh := sched.RunId != "" && sched.RunId == a.activeRunID
+	a.lastScheduleTime = time.Now()
+	a.activeRunID = sched.RunId
+	a.scheduleMu.Unlock()
+
+	if isRefresh {
+		slog.Debug("schedule lease refreshed", "run_id", sched.RunId)
+		return &orbitv1.ProbeScheduleResponse{Accepted: true}, nil
+	}
+
 	a.mu.RLock()
 	ctx := a.ctx
 	a.mu.RUnlock()
@@ -444,95 +466,91 @@ func (a *Agent) handleScheduleAssignment(_ context.Context, sched *orbitv1.Probe
 	a.genMgr.StopAll()
 	a.scenEngine.SetActive(sched.ScenarioName, sched.RunId)
 
-	for _, flow := range sched.EastWestFlows {
-		labels := generator.Labels{
-			Scenario: sched.ScenarioName,
-			RunID:    sched.RunId,
-			FlowType: flow.Type,
-			Protocol: flow.Type,
-			Source:   a.cfg.PodName,
-			Target:   flow.TargetAddress,
-		}
-
-		var gen generator.Generator
-		switch flow.Type {
-		case "tcp-stream":
-			dur := time.Duration(0)
-			if flow.Duration != nil {
-				dur = flow.Duration.AsDuration()
-			}
-			gen = generator.NewTCPGenerator(
-				flow.Id, labels, flow.TargetAddress,
-				flow.BandwidthBps, int(flow.PayloadBytes), int(flow.Connections),
-				dur, flow.Pattern, a.validator, a.appRec,
-			)
-		case "udp-stream":
-			dur := time.Duration(0)
-			if flow.Duration != nil {
-				dur = flow.Duration.AsDuration()
-			}
-			gen = generator.NewUDPGenerator(
-				flow.Id, labels, flow.TargetAddress,
-				int(flow.PacketRate), int(flow.PacketSize),
-				dur, a.validator, a.appRec,
-			)
-		case "http":
-			dur := time.Duration(0)
-			if flow.Duration != nil {
-				dur = flow.Duration.AsDuration()
-			}
-			gen = generator.NewHTTPGenerator(
-				flow.Id, labels, flow.TargetAddress,
-				int(flow.Rps), int(flow.PayloadBytes),
-				flow.HttpMethod, flow.KeepAlive,
-				dur, a.validator, a.appRec,
-			)
-		case "grpc":
-			dur := time.Duration(0)
-			if flow.Duration != nil {
-				dur = flow.Duration.AsDuration()
-			}
-			gen = generator.NewGRPCGenerator(
-				flow.Id, labels, flow.TargetAddress,
-				int(flow.Rps), int(flow.PayloadBytes),
-				dur, a.validator, a.appRec,
-			)
-		case "icmp":
-			dur := time.Duration(0)
-			if flow.Duration != nil {
-				dur = flow.Duration.AsDuration()
-			}
-			intervalMs := 1000
-			if flow.Interval != nil {
-				intervalMs = int(flow.Interval.AsDuration().Milliseconds())
-			}
-			gen = generator.NewICMPGenerator(
-				flow.Id, labels, flow.TargetAddress,
-				intervalMs, dur, a.appRec,
-			)
-		case "connection-churn":
-			dur := time.Duration(0)
-			if flow.Duration != nil {
-				dur = flow.Duration.AsDuration()
-			}
-			gen = generator.NewChurnGenerator(
-				flow.Id, labels, flow.TargetAddress,
-				int(flow.ConnectionsPerSecond), int(flow.HoldDurationMs),
-				dur, a.validator, a.appRec,
-			)
-		default:
-			slog.Warn("unknown flow type", "type", flow.Type)
-			continue
-		}
-
-		a.genMgr.Add(gen)
-	}
+	a.addFlowGenerators(sched.EastWestFlows, sched.ScenarioName, sched.RunId)
+	a.addFlowGenerators(sched.NorthSouthFlows, sched.ScenarioName, sched.RunId)
 
 	if err := a.genMgr.StartAll(ctx); err != nil {
 		return &orbitv1.ProbeScheduleResponse{Accepted: false, Error: err.Error()}, nil
 	}
 
 	return &orbitv1.ProbeScheduleResponse{Accepted: true}, nil
+}
+
+func (a *Agent) addFlowGenerators(flows []*orbitv1.FlowSpec, scenarioName, runID string) {
+	for _, flow := range flows {
+		gen := a.createGeneratorFromFlowSpec(flow, scenarioName, runID)
+		if gen != nil {
+			a.genMgr.Add(gen)
+		}
+	}
+}
+
+func (a *Agent) createGeneratorFromFlowSpec(flow *orbitv1.FlowSpec, scenarioName, runID string) generator.Generator {
+	direction := flow.Direction
+	if direction == "" {
+		direction = "east-west"
+	}
+
+	labels := generator.Labels{
+		Scenario:  scenarioName,
+		RunID:     runID,
+		FlowType:  flow.Type,
+		Protocol:  flow.Type,
+		Source:    a.cfg.PodName,
+		Target:    stripPort(flow.TargetAddress),
+		Direction: direction,
+	}
+
+	dur := time.Duration(0)
+	if flow.Duration != nil {
+		dur = flow.Duration.AsDuration()
+	}
+
+	switch flow.Type {
+	case "tcp-stream":
+		return generator.NewTCPGenerator(
+			flow.Id, labels, flow.TargetAddress,
+			flow.BandwidthBps, int(flow.PayloadBytes), int(flow.Connections),
+			dur, flow.Pattern, a.validator, a.appRec, a.wireRec,
+		)
+	case "udp-stream":
+		return generator.NewUDPGenerator(
+			flow.Id, labels, flow.TargetAddress,
+			int(flow.PacketRate), int(flow.PacketSize),
+			dur, a.validator, a.appRec,
+		)
+	case "http":
+		return generator.NewHTTPGenerator(
+			flow.Id, labels, flow.TargetAddress,
+			int(flow.Rps), int(flow.PayloadBytes),
+			flow.HttpMethod, flow.KeepAlive,
+			dur, a.validator, a.appRec,
+		)
+	case "grpc":
+		return generator.NewGRPCGenerator(
+			flow.Id, labels, flow.TargetAddress,
+			int(flow.Rps), int(flow.PayloadBytes),
+			dur, a.validator, a.appRec,
+		)
+	case "icmp":
+		intervalMs := 1000
+		if flow.Interval != nil {
+			intervalMs = int(flow.Interval.AsDuration().Milliseconds())
+		}
+		return generator.NewICMPGenerator(
+			flow.Id, labels, flow.TargetAddress,
+			intervalMs, dur, a.appRec,
+		)
+	case "connection-churn":
+		return generator.NewChurnGenerator(
+			flow.Id, labels, flow.TargetAddress,
+			int(flow.ConnectionsPerSecond), int(flow.HoldDurationMs),
+			dur, a.validator, a.appRec, a.wireRec,
+		)
+	default:
+		slog.Warn("unknown flow type", "type", flow.Type, "id", flow.Id)
+		return nil
+	}
 }
 
 func (a *Agent) setupReceivers() {
@@ -551,12 +569,13 @@ func (a *Agent) runStandaloneMode(ctx context.Context) {
 
 			for i, f := range sc.EastWest {
 				labels := generator.Labels{
-					Scenario: scenarioName,
-					RunID:    scenarioName,
-					FlowType: f.Type,
-					Protocol: f.Type,
-					Source:   a.cfg.PodName,
-					Target:   fmt.Sprintf("localhost:%d", a.cfg.TCPReceiverPortStart+i),
+					Scenario:  scenarioName,
+					RunID:     scenarioName,
+					FlowType:  f.Type,
+					Protocol:  f.Type,
+					Source:    a.cfg.PodName,
+					Target:    fmt.Sprintf("localhost:%d", a.cfg.TCPReceiverPortStart+i),
+					Direction: "east-west",
 				}
 
 				var gen generator.Generator
@@ -566,7 +585,7 @@ func (a *Agent) runStandaloneMode(ctx context.Context) {
 						fmt.Sprintf("standalone-%d", i), labels,
 						fmt.Sprintf("localhost:%d", a.cfg.TCPReceiverPortStart),
 						int64(f.BandwidthMbps)*1_000_000, f.PayloadBytes, f.Connections,
-						time.Duration(f.DurationSeconds)*time.Second, f.Pattern, a.validator, a.appRec,
+						time.Duration(f.DurationSeconds)*time.Second, f.Pattern, a.validator, a.appRec, a.wireRec,
 					)
 				case "udp-stream":
 					gen = generator.NewUDPGenerator(
@@ -591,6 +610,76 @@ func (a *Agent) runStandaloneMode(ctx context.Context) {
 	}
 
 	<-ctx.Done()
+}
+
+func (a *Agent) startHeartbeat(ctx context.Context) {
+	a.stopHeartbeat()
+	hbCtx, cancel := context.WithCancel(ctx)
+	a.scheduleMu.Lock()
+	a.heartbeatCancel = cancel
+	a.scheduleMu.Unlock()
+	go a.runHeartbeatLoop(hbCtx)
+}
+
+func (a *Agent) stopHeartbeat() {
+	a.scheduleMu.Lock()
+	if a.heartbeatCancel != nil {
+		a.heartbeatCancel()
+		a.heartbeatCancel = nil
+	}
+	a.scheduleMu.Unlock()
+}
+
+func (a *Agent) runHeartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(a.cfg.HeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.coord.Heartbeat(ctx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				slog.Warn("heartbeat failed", "error", err)
+			}
+		}
+	}
+}
+
+func (a *Agent) runScheduleLeaseWatchdog(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.scheduleMu.Lock()
+			runID := a.activeRunID
+			lastTime := a.lastScheduleTime
+			a.scheduleMu.Unlock()
+
+			if runID == "" || lastTime.IsZero() {
+				continue
+			}
+
+			if time.Since(lastTime) > a.cfg.ScheduleLeaseTTL {
+				slog.Warn("schedule lease expired, stopping generators",
+					"run_id", runID,
+					"last_heartbeat", lastTime,
+					"ttl", a.cfg.ScheduleLeaseTTL,
+				)
+				a.genMgr.StopAll()
+				a.scheduleMu.Lock()
+				a.activeRunID = ""
+				a.lastScheduleTime = time.Time{}
+				a.scheduleMu.Unlock()
+				a.scenEngine.Clear()
+			}
+		}
+	}
 }
 
 func (a *Agent) statusFunc() server.StatusResponse {

@@ -1,0 +1,58 @@
+{{- if and .Values.serviceMonitor.satelliteServiceMonitor.enabled .Values.northSouth.satellites }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "orbit.fullname" . }}-satellite
+  namespace: {{ .Values.serviceMonitor.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "orbit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: satellite
+spec:
+  ports:
+    - port: {{ (index .Values.northSouth.satellites 0).httpPort | default 8080 }}
+      name: metrics
+  clusterIP: None
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: {{ include "orbit.fullname" . }}-satellite
+  namespace: {{ .Values.serviceMonitor.namespace | default .Release.Namespace }}
+subsets:
+  - addresses:
+      {{- range .Values.northSouth.satellites }}
+      - ip: {{ .host | quote }}
+      {{- end }}
+    ports:
+      - port: {{ (index .Values.northSouth.satellites 0).httpPort | default 8080 }}
+        name: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "orbit.fullname" . }}-satellite
+  namespace: {{ .Values.serviceMonitor.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "orbit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: satellite
+    {{- with .Values.serviceMonitor.satelliteServiceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.serviceMonitor.satelliteServiceMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "orbit.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: satellite
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.satelliteServiceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.satelliteServiceMonitor.scrapeTimeout }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.serviceMonitor.namespace | default .Release.Namespace }}
+{{- end }}

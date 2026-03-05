@@ -22,12 +22,13 @@ type ChurnGenerator struct {
 	duration       time.Duration
 	validator      *auth.TokenValidator
 	recorder       *recorder.AppRecorder
+	wireRec        *recorder.WireRecorder
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
 }
 
-func NewChurnGenerator(flowID string, labels Labels, target string, connsPerSecond int, holdDurationMs int, duration time.Duration, validator *auth.TokenValidator, rec *recorder.AppRecorder) *ChurnGenerator {
+func NewChurnGenerator(flowID string, labels Labels, target string, connsPerSecond int, holdDurationMs int, duration time.Duration, validator *auth.TokenValidator, rec *recorder.AppRecorder, wireRec *recorder.WireRecorder) *ChurnGenerator {
 	if connsPerSecond <= 0 {
 		connsPerSecond = 100
 	}
@@ -43,6 +44,7 @@ func NewChurnGenerator(flowID string, labels Labels, target string, connsPerSeco
 		duration:       duration,
 		validator:      validator,
 		recorder:       rec,
+		wireRec:        wireRec,
 	}
 }
 
@@ -121,12 +123,17 @@ func (g *ChurnGenerator) churnOnce(ctx context.Context) {
 
 	g.recorder.AddBytesSent(int64(len(g.validator.HandshakeBytes())))
 	metrics.AppBytesSent.WithLabelValues(
-		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, "east-west",
+		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 	).Add(float64(len(g.validator.HandshakeBytes())))
 
 	select {
 	case <-ctx.Done():
 	case <-time.After(g.holdDuration):
+	}
+
+	if g.wireRec != nil {
+		g.wireRec.CollectTCPInfo(conn, g.target, g.labels.Protocol)
+		g.wireRec.RemoveConn(conn, g.target, g.labels.Protocol)
 	}
 
 	conn.Close()

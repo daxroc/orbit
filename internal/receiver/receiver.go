@@ -3,11 +3,20 @@ package receiver
 import (
 	"context"
 	"log/slog"
+	"net"
 	"sync"
 
 	"github.com/daxroc/orbit/internal/auth"
 	"github.com/daxroc/orbit/internal/recorder"
 )
+
+func stripPort(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
+}
 
 type Receiver interface {
 	Start(ctx context.Context) error

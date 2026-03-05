@@ -79,12 +79,13 @@ func (r *UDPReceiver) Start(ctx context.Context) error {
 		r.recorder.AddPacketsReceived(1)
 		metrics.ReceiverBytes.WithLabelValues("udp").Add(float64(n))
 
-		source := remoteAddr.String()
+		source := stripPort(remoteAddr.String())
+		target := stripPort(r.conn.LocalAddr().String())
 		metrics.AppBytesReceived.WithLabelValues(
-			"", "", "udp-stream", "udp", source, r.conn.LocalAddr().String(), "east-west",
+			"", "", "udp-stream", "udp", source, target, "east-west",
 		).Add(float64(n))
 		metrics.AppPacketsReceived.WithLabelValues(
-			"", "", "udp-stream", "udp", source, r.conn.LocalAddr().String(),
+			"", "", "udp-stream", "udp", source, target,
 		).Inc()
 	}
 }
