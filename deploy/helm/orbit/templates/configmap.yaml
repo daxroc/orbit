@@ -7,5 +7,7 @@ metadata:
     {{- include "orbit.labels" . | nindent 4 }}
 data:
   scenarios.yaml: |
+    activeScenario: {{ .Values.config.activeScenario | default "" | quote }}
+    stabilizationPeriod: {{ .Values.config.stabilizationPeriod | default "10s" | quote }}
     scenarios:
       {{- toYaml .Values.scenarios | nindent 6 }}

@@ -1,16 +1,16 @@
 # Orbit
 
-Kubernetes network load generator and measurement tool for validating eBPF-based network monitoring.
+Kubernetes network load generator and measurement tool for validating network monitoring.
 
-Orbit generates controlled traffic flows between pods (east-west) and external endpoints (north-south), independently measures them at application, wire, and system layers, and exposes all metrics via Prometheus — providing ground-truth data to validate eBPF tooling accuracy.
+Orbit generates controlled traffic flows between pods (east-west) and external endpoints (north-south), independently measures them at application, wire, and system layers, and exposes all metrics via Prometheus — providing ground-truth data to validate tooling accuracy.
 
 ## Features
 
 - **Traffic Generation** — TCP streams, UDP streams, HTTP requests, gRPC calls, ICMP pings, connection churn
 - **Three-Layer Measurement** — Application-level byte/packet counters, wire-level TCP_INFO stats, system-level `/proc` metrics
-- **Peer Discovery** — Automatic discovery via Kubernetes headless service endpoints
+- **Peer Discovery** — Automatic discovery via Kubernetes EndpointSlice API
 - **Leader Election** — Kubernetes Lease-based election; leader coordinates traffic across all peers
-- **Scenario Engine** — YAML-driven traffic profiles loaded from ConfigMap with hot-reload via fsnotify
+- **Scenario Engine** — YAML-driven traffic profiles and active scenario selection loaded from ConfigMap with hot-reload via fsnotify
 - **Satellite Mode** — Run an Orbit instance outside the cluster as a controlled external endpoint
 - **Authentication** — Shared bearer token protecting all HTTP, gRPC, and raw TCP/UDP receiver endpoints
 - **Checksum Verification** — SHA-256 payload integrity checks across HTTP and gRPC flows
@@ -114,7 +114,7 @@ All flags can also be set via environment variable (prefix `ORBIT_`, uppercase, 
 |------|---------|---------|-------------|
 | `--mode` | `ORBIT_MODE` | `cluster` | `cluster`, `satellite`, or `standalone` |
 | `--pod-name` | `ORBIT_POD_NAME` | — | Pod name (usually from Downward API) |
-| `--namespace` | `ORBIT_NAMESPACE` | `default` | Kubernetes namespace |
+| `--namespace` | `ORBIT_NAMESPACE` | — | Kubernetes namespace (defaults to Downward API) |
 | `--node-name` | `ORBIT_NODE_NAME` | — | Node name (from Downward API) |
 | `--zone` | `ORBIT_ZONE` | — | Topology zone |
 | `--http-port` | `ORBIT_HTTP_PORT` | `8080` | HTTP server port |
@@ -126,16 +126,32 @@ All flags can also be set via environment variable (prefix `ORBIT_`, uppercase, 
 | `--probe-interval` | `ORBIT_PROBE_INTERVAL` | `10s` | Default probe interval |
 | `--discovery-period` | `ORBIT_DISCOVERY_PERIOD` | `5s` | Peer discovery refresh period |
 | `--leader-election-id` | `ORBIT_LEADER_ELECTION_ID` | `orbit-leader` | Leader election Lease name |
-| `--leader-election-namespace` | `ORBIT_LEADER_ELECTION_NAMESPACE` | `default` | Leader election namespace |
+| `--leader-election-namespace` | `ORBIT_LEADER_ELECTION_NAMESPACE` | — | Leader election namespace (defaults to Downward API) |
 | `--log-level` | `ORBIT_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `--log-format` | `ORBIT_LOG_FORMAT` | `json` | `json` or `text` |
 | `--scenarios-config-path` | — | `/etc/orbit/scenarios.yaml` | Path to scenarios YAML file |
-| `--active-scenario` | `ORBIT_ACTIVE_SCENARIO` | — | Scenario to activate on start |
+| ~~`--active-scenario`~~ | — | — | *Removed.* Set `activeScenario` in scenarios ConfigMap instead |
 | `--metrics-protected` | `ORBIT_METRICS_PROTECTED` | `false` | Require auth token for `/metrics` |
 
 ## Scenarios
 
-Scenarios are defined in `values.yaml` under `scenarios:` and mounted as a ConfigMap. The file is watched via fsnotify — changes are picked up automatically without restarting the pod.
+Scenarios are defined in `values.yaml` under `scenarios:` and mounted as a ConfigMap. The file is watched via fsnotify — changes to both scenario definitions and the active scenario are picked up automatically without restarting pods.
+
+The active scenario is set via `config.activeScenario` in your Helm values. To switch scenarios at runtime:
+
+```bash
+helm upgrade orbit deploy/helm/orbit --reuse-values \
+  --set config.activeScenario="connection-churn"
+```
+
+Kubernetes propagates the ConfigMap update to all pods (~60s), and the leader automatically stops existing flows and activates the new scenario.
+
+Before distributing schedules, the leader waits for the peer mesh to stabilize — the discovered peer count must remain unchanged for `config.stabilizationPeriod` (default `10s`). This prevents partial mesh assignments when pods are still joining. Adjust it for larger clusters:
+
+```bash
+helm upgrade orbit deploy/helm/orbit --reuse-values \
+  --set config.stabilizationPeriod="30s"
+```
 
 ```yaml
 scenarios:
@@ -264,7 +280,8 @@ See `deploy/helm/orbit/values.yaml` for all configurable values. Key options:
 
 - `mode` — `daemonset` (one per node) or `deployment` (replica count)
 - `auth.token` / `auth.existingSecret` — Bearer token configuration
-- `config.activeScenario` — Auto-start a scenario on boot
+- `config.activeScenario` — Active scenario (set in ConfigMap, hot-reloaded without restart)
+- `config.stabilizationPeriod` — Time the peer mesh must be stable before distributing schedules (default `10s`)
 - `serviceMonitor.enabled` — Create Prometheus ServiceMonitor
 - `satellite.enabled` — Deploy a satellite instance
 - `securityContext.capabilities.add: [NET_RAW]` — Required for ICMP

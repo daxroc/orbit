@@ -7,14 +7,16 @@ import (
 	"sync"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 )
 
 type Peer struct {
 	ID       string
+	IP       string
 	Address  string
 	NodeName string
 	Zone     string
@@ -95,23 +97,31 @@ func (d *Discovery) Run(ctx context.Context) error {
 	}
 }
 
+func (d *Discovery) labelSelector() string {
+	return labels.Set{
+		discoveryv1.LabelServiceName: d.serviceName,
+	}.String()
+}
+
 func (d *Discovery) refresh(ctx context.Context) error {
-	endpoints, err := d.client.CoreV1().Endpoints(d.namespace).Get(ctx, d.serviceName, metav1.GetOptions{})
+	sliceList, err := d.client.DiscoveryV1().EndpointSlices(d.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: d.labelSelector(),
+	})
 	if err != nil {
-		return fmt.Errorf("get endpoints: %w", err)
+		return fmt.Errorf("list endpointslices: %w", err)
 	}
 
-	d.updateFromEndpoints(endpoints)
+	d.updateFromSlices(sliceList.Items)
 	return nil
 }
 
 func (d *Discovery) watchEndpoints(ctx context.Context) {
 	for {
-		watcher, err := d.client.CoreV1().Endpoints(d.namespace).Watch(ctx, metav1.ListOptions{
-			FieldSelector: fmt.Sprintf("metadata.name=%s", d.serviceName),
+		watcher, err := d.client.DiscoveryV1().EndpointSlices(d.namespace).Watch(ctx, metav1.ListOptions{
+			LabelSelector: d.labelSelector(),
 		})
 		if err != nil {
-			slog.Error("failed to watch endpoints", "error", err)
+			slog.Error("failed to watch endpointslices", "error", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -133,8 +143,10 @@ func (d *Discovery) watchEndpoints(ctx context.Context) {
 				if event.Type == watch.Error {
 					continue
 				}
-				if ep, ok := event.Object.(*corev1.Endpoints); ok {
-					d.updateFromEndpoints(ep)
+				if _, ok := event.Object.(*discoveryv1.EndpointSlice); ok {
+					if err := d.refresh(ctx); err != nil {
+						slog.Warn("refresh after watch event failed", "error", err)
+					}
 				}
 			}
 		}
@@ -149,49 +161,62 @@ func (d *Discovery) watchEndpoints(ctx context.Context) {
 	}
 }
 
-func (d *Discovery) updateFromEndpoints(endpoints *corev1.Endpoints) {
+func (d *Discovery) updateFromSlices(slices []discoveryv1.EndpointSlice) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	seen := make(map[string]bool)
 	now := time.Now()
 
-	for _, subset := range endpoints.Subsets {
-		for _, addr := range subset.Addresses {
+	for _, slice := range slices {
+		for _, ep := range slice.Endpoints {
 			peerID := ""
-			if addr.TargetRef != nil {
-				peerID = addr.TargetRef.Name
+			if ep.TargetRef != nil {
+				peerID = ep.TargetRef.Name
 			}
-			if peerID == "" {
-				peerID = addr.IP
+			if peerID == "" && len(ep.Addresses) > 0 {
+				peerID = ep.Addresses[0]
 			}
-			if peerID == d.selfID {
+			if peerID == "" || peerID == d.selfID {
+				continue
+			}
+			if ep.Conditions.Ready != nil && !*ep.Conditions.Ready {
+				continue
+			}
+			if len(ep.Addresses) == 0 {
 				continue
 			}
 
 			seen[peerID] = true
-			address := fmt.Sprintf("%s:%d", addr.IP, d.grpcPort)
+			ip := ep.Addresses[0]
+			address := fmt.Sprintf("%s:%d", ip, d.grpcPort)
 			nodeName := ""
-			if addr.NodeName != nil {
-				nodeName = *addr.NodeName
+			if ep.NodeName != nil {
+				nodeName = *ep.NodeName
 			}
 			zone := ""
+			if ep.Zone != nil {
+				zone = *ep.Zone
+			}
 
 			if existing, ok := d.peers[peerID]; ok {
+				existing.IP = ip
 				existing.Address = address
 				existing.NodeName = nodeName
+				existing.Zone = zone
 				existing.Ready = true
 				existing.LastSeen = now
 			} else {
 				d.peers[peerID] = &Peer{
 					ID:       peerID,
+					IP:       ip,
 					Address:  address,
 					NodeName: nodeName,
 					Zone:     zone,
 					Ready:    true,
 					LastSeen: now,
 				}
-				slog.Info("discovered peer", "id", peerID, "address", address, "node", nodeName)
+				slog.Info("discovered peer", "id", peerID, "address", address, "node", nodeName, "zone", zone)
 			}
 		}
 	}

@@ -914,7 +914,7 @@ const file_proto_orbit_v1_orbit_proto_rawDesc = "" +
 	"\x0eAssignSchedule\x12\x17.orbit.v1.ProbeSchedule\x1a\x1f.orbit.v1.ProbeScheduleResponse\x12F\n" +
 	"\fReportStatus\x12\x16.orbit.v1.StatusReport\x1a\x1e.orbit.v1.StatusReportResponse\x12:\n" +
 	"\n" +
-	"StreamData\x12\x13.orbit.v1.DataChunk\x1a\x13.orbit.v1.DataChunk(\x010\x01B1Z/github.com/daxroc/orbit/proto/orbit/v1;orbitv1b\x06proto3"
+	"StreamData\x12\x13.orbit.v1.DataChunk\x1a\x13.orbit.v1.DataChunk(\x010\x01B0Z.github.com/daxroc/orbit/proto/orbit/v1;orbitv1b\x06proto3"
 
 var (
 	file_proto_orbit_v1_orbit_proto_rawDescOnce sync.Once

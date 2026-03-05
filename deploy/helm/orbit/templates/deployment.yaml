@@ -14,7 +14,6 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -49,9 +48,6 @@ spec:
             - --leader-election-id={{ include "orbit.fullname" . }}-leader
             - --leader-election-namespace={{ .Release.Namespace }}
             - --scenarios-config-path=/etc/orbit/scenarios.yaml
-            {{- if .Values.config.activeScenario }}
-            - --active-scenario={{ .Values.config.activeScenario }}
-            {{- end }}
             {{- if .Values.config.metricsProtected }}
             - --metrics-protected
             {{- end }}

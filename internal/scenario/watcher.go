@@ -67,16 +67,22 @@ func (w *Watcher) loop() {
 			if !ok {
 				return
 			}
-			if filepath.Base(event.Name) != base {
+			name := filepath.Base(event.Name)
+			isTarget := name == base
+			isSymlinkSwap := name == "..data" && event.Has(fsnotify.Create)
+
+			if !isTarget && !isSymlinkSwap {
 				continue
 			}
-			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-				slog.Info("scenario config changed, reloading", "event", event.Op.String())
-				if err := w.engine.LoadFromFile(w.path); err != nil {
-					slog.Error("failed to reload scenarios", "error", err)
-				} else {
-					slog.Info("scenarios reloaded successfully")
-				}
+			if isTarget && !(event.Has(fsnotify.Write) || event.Has(fsnotify.Create)) {
+				continue
+			}
+
+			slog.Info("scenario config changed, reloading", "trigger", name, "event", event.Op.String())
+			if err := w.engine.LoadFromFile(w.path); err != nil {
+				slog.Error("failed to reload scenarios", "error", err)
+			} else {
+				slog.Info("scenarios reloaded successfully")
 			}
 		case err, ok := <-w.watcher.Errors:
 			if !ok {

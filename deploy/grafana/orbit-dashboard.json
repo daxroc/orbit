@@ -30,10 +30,10 @@
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "orbit_peer_count", "legendFormat": "peers" }
+        { "refId": "A", "expr": "orbit_peer_count", "legendFormat": "peers" }
       ],
       "fieldConfig": {
-        "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 0 }] } }
+        "defaults": { "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 1 }, { "color": "green", "value": 3 }] } }
       }
     },
     {
@@ -42,7 +42,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "orbit_leader_info == 1", "legendFormat": "{{instance}}" }
+        { "refId": "A", "expr": "orbit_leader_info == 1", "legendFormat": "{{instance}}" }
       ]
     },
     {
@@ -51,7 +51,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "orbit_scenario_active == 1", "legendFormat": "{{scenario}} ({{run_id}})" }
+        { "refId": "A", "expr": "orbit_scenario_active == 1", "legendFormat": "{{scenario}} ({{run_id}})" }
       ]
     },
     {
@@ -60,7 +60,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum(orbit_app_connections_active)", "legendFormat": "connections" }
+        { "refId": "A", "expr": "sum(orbit_app_connections_active)", "legendFormat": "connections" }
       ]
     },
     {
@@ -69,7 +69,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum(increase(orbit_generator_errors_total[5m]))", "legendFormat": "errors/5m" }
+        { "refId": "A", "expr": "sum(increase(orbit_generator_errors_total[5m]))", "legendFormat": "errors/5m" }
       ],
       "fieldConfig": {
         "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
@@ -81,7 +81,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum(increase(orbit_app_checksum_errors_total[5m]))", "legendFormat": "errors/5m" }
+        { "refId": "A", "expr": "sum(increase(orbit_app_checksum_errors_total[5m]))", "legendFormat": "errors/5m" }
       ],
       "fieldConfig": {
         "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
@@ -99,7 +99,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum by (source, target) (rate(orbit_app_bytes_sent_total[1m]))", "legendFormat": "{{source}} → {{target}}" }
+        { "refId": "A", "expr": "sum by (source, target) (rate(orbit_app_bytes_sent_total[1m]))", "legendFormat": "{{source}} → {{target}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
@@ -111,7 +111,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum by (source, target) (rate(orbit_app_bytes_received_total[1m]))", "legendFormat": "{{source}} → {{target}}" }
+        { "refId": "A", "expr": "sum by (source, target) (rate(orbit_app_bytes_received_total[1m]))", "legendFormat": "{{source}} → {{target}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
@@ -123,9 +123,9 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p50" },
-        { "expr": "histogram_quantile(0.95, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" },
-        { "expr": "histogram_quantile(0.99, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p99" }
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(orbit_app_request_duration_seconds_bucket[1m])))", "legendFormat": "p99" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -137,8 +137,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum(rate(orbit_app_packets_sent_total[1m]))", "legendFormat": "sent/s" },
-        { "expr": "sum(rate(orbit_app_packets_received_total[1m]))", "legendFormat": "recv/s" }
+        { "refId": "A", "expr": "sum(rate(orbit_app_packets_sent_total[1m]))", "legendFormat": "sent/s" },
+        { "refId": "B", "expr": "sum(rate(orbit_app_packets_received_total[1m]))", "legendFormat": "recv/s" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "pps" }
@@ -156,7 +156,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "orbit_wire_rtt_seconds", "legendFormat": "{{source}} → {{target}}" }
+        { "refId": "A", "expr": "orbit_wire_rtt_seconds", "legendFormat": "{{source}} → {{target}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -168,7 +168,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "orbit_wire_rtt_variance_seconds", "legendFormat": "{{source}} → {{target}}" }
+        { "refId": "A", "expr": "orbit_wire_rtt_variance_seconds", "legendFormat": "{{source}} → {{target}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -180,7 +180,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "orbit_wire_cwnd_segments", "legendFormat": "{{source}} → {{target}}" }
+        { "refId": "A", "expr": "orbit_wire_cwnd_segments", "legendFormat": "{{source}} → {{target}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "short" }
@@ -192,8 +192,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "rate(orbit_wire_segments_retransmitted_total[1m])", "legendFormat": "{{source}} → {{target}}" },
-        { "expr": "rate(orbit_wire_lost_packets_total[1m])", "legendFormat": "lost: {{source}} → {{target}}" }
+        { "refId": "A", "expr": "rate(orbit_wire_segments_retransmitted_total[1m])", "legendFormat": "{{source}} → {{target}}" },
+        { "refId": "B", "expr": "rate(orbit_wire_lost_packets_total[1m])", "legendFormat": "lost: {{source}} → {{target}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "short" }
@@ -205,8 +205,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum by (source, target) (rate(orbit_wire_bytes_sent_total[1m]))", "legendFormat": "sent: {{source}} → {{target}}" },
-        { "expr": "sum by (source, target) (rate(orbit_wire_bytes_received_total[1m]))", "legendFormat": "recv: {{source}} → {{target}}" }
+        { "refId": "A", "expr": "sum by (source, target) (rate(orbit_wire_bytes_sent_total[1m]))", "legendFormat": "sent: {{source}} → {{target}}" },
+        { "refId": "B", "expr": "sum by (source, target) (rate(orbit_wire_bytes_received_total[1m]))", "legendFormat": "recv: {{source}} → {{target}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
@@ -224,8 +224,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "rate(orbit_node_ip_bytes_sent_total[1m])", "legendFormat": "tx: {{node}}/{{interface}}" },
-        { "expr": "rate(orbit_node_ip_bytes_received_total[1m])", "legendFormat": "rx: {{node}}/{{interface}}" }
+        { "refId": "A", "expr": "rate(orbit_node_ip_bytes_sent_total[1m])", "legendFormat": "tx: {{node}}/{{interface}}" },
+        { "refId": "B", "expr": "rate(orbit_node_ip_bytes_received_total[1m])", "legendFormat": "rx: {{node}}/{{interface}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
@@ -237,8 +237,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "rate(orbit_node_tcp_active_opens_total[1m])", "legendFormat": "active: {{node}}" },
-        { "expr": "rate(orbit_node_tcp_passive_opens_total[1m])", "legendFormat": "passive: {{node}}" }
+        { "refId": "A", "expr": "rate(orbit_node_tcp_active_opens_total[1m])", "legendFormat": "active: {{node}}" },
+        { "refId": "B", "expr": "rate(orbit_node_tcp_passive_opens_total[1m])", "legendFormat": "passive: {{node}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "ops" }
@@ -256,7 +256,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 49 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum by (flow_type) (rate(orbit_generator_bytes_total[1m]))", "legendFormat": "{{flow_type}}" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_generator_bytes_total[1m]))", "legendFormat": "{{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
@@ -268,7 +268,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 49 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum by (flow_type) (rate(orbit_generator_errors_total[1m]))", "legendFormat": "{{flow_type}}" }
+        { "refId": "A", "expr": "sum by (flow_type) (rate(orbit_generator_errors_total[1m]))", "legendFormat": "{{flow_type}}" }
       ]
     },
     {
@@ -277,8 +277,8 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 49 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[1m])))", "legendFormat": "p50 {{flow_type}}" },
-        { "expr": "histogram_quantile(0.95, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[1m])))", "legendFormat": "p95 {{flow_type}}" }
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[1m])))", "legendFormat": "p50 {{flow_type}}" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[1m])))", "legendFormat": "p95 {{flow_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -296,7 +296,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum by (receiver_type) (rate(orbit_receiver_bytes_total[1m]))", "legendFormat": "{{receiver_type}}" }
+        { "refId": "A", "expr": "sum by (receiver_type) (rate(orbit_receiver_bytes_total[1m]))", "legendFormat": "{{receiver_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "Bps" }
@@ -308,7 +308,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
-        { "expr": "sum by (receiver_type) (rate(orbit_receiver_connections_total[1m]))", "legendFormat": "{{receiver_type}}" }
+        { "refId": "A", "expr": "sum by (receiver_type) (rate(orbit_receiver_connections_total[1m]))", "legendFormat": "{{receiver_type}}" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "ops" }

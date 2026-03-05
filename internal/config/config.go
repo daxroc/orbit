@@ -96,7 +96,9 @@ type Scenario struct {
 }
 
 type ScenariosConfig struct {
-	Scenarios map[string]Scenario `mapstructure:"scenarios" yaml:"scenarios"`
+	ActiveScenario      string              `mapstructure:"activeScenario" yaml:"activeScenario"`
+	StabilizationPeriod string              `mapstructure:"stabilizationPeriod" yaml:"stabilizationPeriod"`
+	Scenarios           map[string]Scenario `mapstructure:"scenarios" yaml:"scenarios"`
 }
 
 func DefaultConfig() *Config {

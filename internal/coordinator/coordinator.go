@@ -21,9 +21,17 @@ type FlowAssignment struct {
 	Flows  []*orbitv1.FlowSpec
 }
 
+type PortConfig struct {
+	GRPC             int
+	HTTPEcho         int
+	TCPReceiverStart int
+	UDPReceiverStart int
+}
+
 type Coordinator struct {
 	selfID    string
 	validator *auth.TokenValidator
+	ports     PortConfig
 
 	mu          sync.RWMutex
 	peers       map[string]*discovery.Peer
@@ -32,10 +40,11 @@ type Coordinator struct {
 	runID       string
 }
 
-func New(selfID string, validator *auth.TokenValidator) *Coordinator {
+func New(selfID string, validator *auth.TokenValidator, ports PortConfig) *Coordinator {
 	return &Coordinator{
 		selfID:      selfID,
 		validator:   validator,
+		ports:       ports,
 		peers:       make(map[string]*discovery.Peer),
 		assignments: make(map[string]*FlowAssignment),
 	}
@@ -83,7 +92,8 @@ func (c *Coordinator) BuildMeshAssignments(scenarioName string, eastWestFlows []
 					continue
 				}
 				dstPeer := c.peers[dstID]
-				spec := templateToFlowSpec(tmpl, flowID, dstPeer.Address, "east-west")
+				targetAddr := c.targetAddress(tmpl.Type, dstPeer)
+				spec := templateToFlowSpec(tmpl, flowID, targetAddr, "east-west")
 				flowID++
 
 				if _, ok := assignments[srcID]; !ok {
@@ -163,6 +173,23 @@ type FlowTemplate struct {
 	HoldDurationMs       int32
 	DurationSeconds      int32
 	IntervalMs           int32
+}
+
+func (c *Coordinator) targetAddress(flowType string, peer *discovery.Peer) string {
+	switch flowType {
+	case "http":
+		return fmt.Sprintf("%s:%d", peer.IP, c.ports.HTTPEcho)
+	case "grpc":
+		return fmt.Sprintf("%s:%d", peer.IP, c.ports.GRPC)
+	case "tcp-stream", "connection-churn":
+		return fmt.Sprintf("%s:%d", peer.IP, c.ports.TCPReceiverStart)
+	case "udp-stream":
+		return fmt.Sprintf("%s:%d", peer.IP, c.ports.UDPReceiverStart)
+	case "icmp":
+		return peer.IP
+	default:
+		return peer.Address
+	}
 }
 
 func templateToFlowSpec(tmpl FlowTemplate, id int, targetAddr, direction string) *orbitv1.FlowSpec {
