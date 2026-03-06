@@ -137,6 +137,7 @@ type FlowDef struct {
 	ConnectionsPerSecond int    `mapstructure:"connectionsPerSecond" yaml:"connectionsPerSecond"`
 	HoldDurationMs       int    `mapstructure:"holdDurationMs" yaml:"holdDurationMs"`
 	IntervalMs           int    `mapstructure:"intervalMs" yaml:"intervalMs"`
+	Workers              int    `mapstructure:"workers" yaml:"workers"`
 }
 
 type NorthSouthDistribution struct {

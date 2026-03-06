@@ -62,6 +62,7 @@ message FlowSpec {
   int32 burst_interval_seconds = 20;
   int32 connections_per_second = 21;
   int32 hold_duration_ms = 22;
+  int32 workers = 23;
 
   google.protobuf.Duration duration = 30;
   google.protobuf.Duration interval = 31;

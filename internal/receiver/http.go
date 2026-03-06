@@ -37,10 +37,12 @@ func NewHTTPReceiver(port int, validator *auth.TokenValidator, rec *recorder.App
 	mux.HandleFunc("/echo", r.handleEcho)
 
 	r.srv = &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      validator.HTTPMiddleware(false, mux),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Addr:           fmt.Sprintf(":%d", port),
+		Handler:        validator.HTTPMiddleware(false, mux),
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: 1 << 16,
 	}
 
 	return r
@@ -73,13 +75,16 @@ func (r *HTTPReceiver) Stop() error {
 	return r.srv.Shutdown(ctx)
 }
 
+const maxEchoBodyBytes = 1 << 20
+
 func (r *HTTPReceiver) handleEcho(w http.ResponseWriter, req *http.Request) {
+	defer req.Body.Close()
+	req.Body = http.MaxBytesReader(w, req.Body, maxEchoBodyBytes)
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		http.Error(w, "read error", http.StatusBadRequest)
 		return
 	}
-	defer req.Body.Close()
 
 	r.recorder.AddBytesReceived(int64(len(body)))
 	metrics.ReceiverBytes.WithLabelValues("http").Add(float64(len(body)))

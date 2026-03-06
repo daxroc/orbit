@@ -334,6 +334,7 @@ type FlowTemplate struct {
 	HoldDurationMs       int32
 	DurationSeconds      int32
 	IntervalMs           int32
+	Workers              int32
 }
 
 func (c *Coordinator) targetAddress(flowType string, peer *discovery.Peer) string {
@@ -372,6 +373,7 @@ func templateToFlowSpec(tmpl FlowTemplate, id int, targetAddr, direction string)
 		BurstIntervalSeconds: tmpl.BurstIntervalSeconds,
 		ConnectionsPerSecond: tmpl.ConnectionsPerSecond,
 		HoldDurationMs:       tmpl.HoldDurationMs,
+		Workers:              tmpl.Workers,
 		Duration:             durationpb.New(time.Duration(tmpl.DurationSeconds) * time.Second),
 		Interval:             durationpb.New(time.Duration(tmpl.IntervalMs) * time.Millisecond),
 	}

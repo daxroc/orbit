@@ -307,6 +307,7 @@ type FlowSpec struct {
 	BurstIntervalSeconds int32                  `protobuf:"varint,20,opt,name=burst_interval_seconds,json=burstIntervalSeconds,proto3" json:"burst_interval_seconds,omitempty"`
 	ConnectionsPerSecond int32                  `protobuf:"varint,21,opt,name=connections_per_second,json=connectionsPerSecond,proto3" json:"connections_per_second,omitempty"`
 	HoldDurationMs       int32                  `protobuf:"varint,22,opt,name=hold_duration_ms,json=holdDurationMs,proto3" json:"hold_duration_ms,omitempty"`
+	Workers              int32                  `protobuf:"varint,23,opt,name=workers,proto3" json:"workers,omitempty"`
 	Duration             *durationpb.Duration   `protobuf:"bytes,30,opt,name=duration,proto3" json:"duration,omitempty"`
 	Interval             *durationpb.Duration   `protobuf:"bytes,31,opt,name=interval,proto3" json:"interval,omitempty"`
 	unknownFields        protoimpl.UnknownFields
@@ -465,6 +466,13 @@ func (x *FlowSpec) GetConnectionsPerSecond() int32 {
 func (x *FlowSpec) GetHoldDurationMs() int32 {
 	if x != nil {
 		return x.HoldDurationMs
+	}
+	return 0
+}
+
+func (x *FlowSpec) GetWorkers() int32 {
+	if x != nil {
+		return x.Workers
 	}
 	return 0
 }
@@ -847,7 +855,7 @@ const file_proto_orbit_v1_orbit_proto_rawDesc = "" +
 	"\x04mode\x18\x06 \x01(\tR\x04mode\"S\n" +
 	"\x18PeerRegistrationResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1b\n" +
-	"\tleader_id\x18\x02 \x01(\tR\bleaderId\"\xe8\x05\n" +
+	"\tleader_id\x18\x02 \x01(\tR\bleaderId\"\x82\x06\n" +
 	"\bFlowSpec\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12%\n" +
@@ -872,7 +880,8 @@ const file_proto_orbit_v1_orbit_proto_rawDesc = "" +
 	"\x16burst_duration_seconds\x18\x13 \x01(\x05R\x14burstDurationSeconds\x124\n" +
 	"\x16burst_interval_seconds\x18\x14 \x01(\x05R\x14burstIntervalSeconds\x124\n" +
 	"\x16connections_per_second\x18\x15 \x01(\x05R\x14connectionsPerSecond\x12(\n" +
-	"\x10hold_duration_ms\x18\x16 \x01(\x05R\x0eholdDurationMs\x125\n" +
+	"\x10hold_duration_ms\x18\x16 \x01(\x05R\x0eholdDurationMs\x12\x18\n" +
+	"\aworkers\x18\x17 \x01(\x05R\aworkers\x125\n" +
 	"\bduration\x18\x1e \x01(\v2\x19.google.protobuf.DurationR\bduration\x125\n" +
 	"\binterval\x18\x1f \x01(\v2\x19.google.protobuf.DurationR\binterval\"\xfe\x01\n" +
 	"\rProbeSchedule\x12#\n" +

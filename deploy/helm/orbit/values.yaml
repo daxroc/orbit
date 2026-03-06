@@ -47,6 +47,11 @@ scenarios:
       - type: http
         rps: 10
         payloadBytes: 512
+        ## workers: number of concurrent HTTP client goroutines (default: 4).
+        ## keepAlive: reuse TCP connections across requests (default: false).
+        ## When keepAlive is false, each request opens a new TCP connection.
+        # workers: 4
+        # keepAlive: true
     northSouth: []
 
   steady-high:
@@ -58,9 +63,15 @@ scenarios:
       - type: udp-stream
         packetRate: 10000
         packetSize: 1400
+      ## At high RPS, consider enabling workers and keepAlive. Without
+      ## keepAlive each request opens a new TCP connection, which can
+      ## saturate conntrack tables or trigger SYN rate limiting depending
+      ## on the network environment.
       - type: http
         rps: 1000
         payloadBytes: 4096
+        workers: 100
+        keepAlive: true
     northSouth: []
 
   burst:
@@ -75,10 +86,15 @@ scenarios:
 
   connection-churn:
     description: "Rapid connection lifecycle for conntrack validation"
+    ## holdDurationMs controls how long each TCP connection is held open.
+    ## Lower values increase concurrent SYN pressure on the network.
+    ## connectionsPerSecond controls the rate of new TCP connections.
+    ## High values may trigger SYN rate limiting depending on the network.
+    ## Monitor orbit_wire_segments_retransmitted_total for packet loss.
     eastWest:
       - type: connection-churn
-        connectionsPerSecond: 500
-        holdDurationMs: 50
+        connectionsPerSecond: 50
+        holdDurationMs: 500
     northSouth: []
 
   protocol-matrix:
@@ -90,12 +106,15 @@ scenarios:
         packetRate: 5000
       - type: http
         rps: 100
+        workers: 30
+        keepAlive: true
       - type: grpc
         rps: 100
       - type: icmp
         intervalMs: 100
       - type: connection-churn
-        connectionsPerSecond: 100
+        connectionsPerSecond: 50
+        holdDurationMs: 500
     northSouth: []
 
   ## Example: scenario with direct north-south flows. These are merged

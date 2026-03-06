@@ -306,6 +306,7 @@ func (a *Agent) activateScenario(ctx context.Context, scenarioName string) {
 			HoldDurationMs:       int32(f.HoldDurationMs),
 			DurationSeconds:      int32(f.DurationSeconds),
 			IntervalMs:           int32(f.IntervalMs),
+			Workers:              int32(f.Workers),
 		})
 	}
 
@@ -372,6 +373,7 @@ func flowDefToFlowSpec(f config.FlowDef, id int, targetAddr, direction string) *
 		BurstIntervalSeconds: int32(f.BurstIntervalSeconds),
 		ConnectionsPerSecond: int32(f.ConnectionsPerSecond),
 		HoldDurationMs:       int32(f.HoldDurationMs),
+		Workers:              int32(f.Workers),
 		Duration:             durationpb.New(time.Duration(f.DurationSeconds) * time.Second),
 		Interval:             durationpb.New(time.Duration(f.IntervalMs) * time.Millisecond),
 	}
@@ -524,6 +526,7 @@ func (a *Agent) createGeneratorFromFlowSpec(flow *orbitv1.FlowSpec, scenarioName
 			flow.Id, labels, flow.TargetAddress,
 			int(flow.Rps), int(flow.PayloadBytes),
 			flow.HttpMethod, flow.KeepAlive,
+			int(flow.Workers),
 			dur, a.validator, a.appRec,
 		)
 	case "grpc":

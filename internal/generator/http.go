@@ -27,15 +27,17 @@ type HTTPGenerator struct {
 	payloadBytes int
 	method       string
 	keepAlive    bool
+	workers      int
 	duration     time.Duration
 	validator    *auth.TokenValidator
 	recorder     *recorder.AppRecorder
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	bufPool sync.Pool
+	mu      sync.Mutex
+	cancel  context.CancelFunc
 }
 
-func NewHTTPGenerator(flowID string, labels Labels, target string, rps, payloadBytes int, method string, keepAlive bool, duration time.Duration, validator *auth.TokenValidator, rec *recorder.AppRecorder) *HTTPGenerator {
+func NewHTTPGenerator(flowID string, labels Labels, target string, rps, payloadBytes int, method string, keepAlive bool, workers int, duration time.Duration, validator *auth.TokenValidator, rec *recorder.AppRecorder) *HTTPGenerator {
 	if rps <= 0 {
 		rps = 10
 	}
@@ -45,6 +47,9 @@ func NewHTTPGenerator(flowID string, labels Labels, target string, rps, payloadB
 	if method == "" {
 		method = http.MethodPost
 	}
+	if workers <= 0 {
+		workers = 4
+	}
 	return &HTTPGenerator{
 		flowID:       flowID,
 		labels:       labels,
@@ -53,9 +58,13 @@ func NewHTTPGenerator(flowID string, labels Labels, target string, rps, payloadB
 		payloadBytes: payloadBytes,
 		method:       method,
 		keepAlive:    keepAlive,
+		workers:      workers,
 		duration:     duration,
 		validator:    validator,
 		recorder:     rec,
+		bufPool: sync.Pool{
+			New: func() any { return make([]byte, 0, payloadBytes*2) },
+		},
 	}
 }
 
@@ -77,30 +86,37 @@ func (g *HTTPGenerator) Start(ctx context.Context) error {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
-			DisableKeepAlives: !g.keepAlive,
-			MaxIdleConns:      100,
-			IdleConnTimeout:   90 * time.Second,
+			DisableKeepAlives:   !g.keepAlive,
+			MaxIdleConns:        g.workers + 2,
+			MaxIdleConnsPerHost: g.workers + 2,
+			IdleConnTimeout:     90 * time.Second,
 		},
 	}
 
 	payload := make([]byte, g.payloadBytes)
 	_, _ = rand.Read(payload)
 
-	limiter := rate.NewLimiter(rate.Limit(g.rps), 10)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
-		if err := limiter.Wait(ctx); err != nil {
-			return nil
-		}
-
-		g.sendRequest(ctx, client, payload)
+	burst := g.rps / g.workers
+	if burst < 1 {
+		burst = 1
 	}
+	limiter := rate.NewLimiter(rate.Limit(g.rps), burst)
+
+	var wg sync.WaitGroup
+	for i := 0; i < g.workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				if err := limiter.Wait(ctx); err != nil {
+					return
+				}
+				g.sendRequest(ctx, client, payload)
+			}
+		}()
+	}
+	wg.Wait()
+	return nil
 }
 
 func (g *HTTPGenerator) Stop() error {
@@ -137,18 +153,20 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 		return
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	buf := g.bufPool.Get().([]byte)
+	buf = buf[:0]
+	buf, _ = io.ReadAll(io.LimitReader(resp.Body, int64(g.payloadBytes*2)))
 	resp.Body.Close()
 
 	if csHeader := resp.Header.Get("X-Orbit-Checksum"); csHeader != "" {
 		expected, err := hex.DecodeString(csHeader)
-		if err == nil && !checksum.Verify(body, expected) {
+		if err == nil && !checksum.Verify(buf, expected) {
 			metrics.ChecksumErrors.WithLabelValues(g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target).Inc()
 		}
 	}
 
 	g.recorder.AddBytesSent(int64(len(payload)))
-	g.recorder.AddBytesReceived(int64(len(body)))
+	g.recorder.AddBytesReceived(int64(len(buf)))
 	g.recorder.AddConnection()
 	g.recorder.RemoveConnection()
 
@@ -157,7 +175,7 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 	).Add(float64(len(payload)))
 	metrics.AppBytesReceived.WithLabelValues(
 		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
-	).Add(float64(len(body)))
+	).Add(float64(len(buf)))
 	metrics.AppRequestDuration.WithLabelValues(
 		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target,
 	).Observe(elapsed.Seconds())
@@ -166,4 +184,6 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 	).Inc()
 	metrics.GeneratorBytes.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Add(float64(len(payload)))
 	metrics.GeneratorLatency.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Observe(elapsed.Seconds())
+
+	g.bufPool.Put(buf[:0])
 }
