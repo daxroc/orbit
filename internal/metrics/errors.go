@@ -7,8 +7,6 @@ const (
 	ReasonHandshakeFailed     ErrorReason = "handshake_failed"
 	ReasonWriteFailed         ErrorReason = "write_failed"
 	ReasonReadFailed          ErrorReason = "read_failed"
-	ReasonResolveFailed       ErrorReason = "resolve_failed"
-	ReasonListenFailed        ErrorReason = "listen_failed"
 	ReasonRequestCreateFailed ErrorReason = "request_create_failed"
 	ReasonRequestSendFailed   ErrorReason = "request_send_failed"
 	ReasonRPCFailed           ErrorReason = "rpc_failed"
