@@ -61,7 +61,9 @@ func (r *HTTPReceiver) Start(ctx context.Context) error {
 	// context cancellation (in addition to Stop()) to shut down the receiver.
 	go func() {
 		<-ctx.Done()
-		r.Stop()
+		if err := r.Stop(); err != nil {
+			slog.Error("HTTP receiver stop error", "err", err)
+		}
 	}()
 
 	slog.Info("HTTP echo receiver listening", "port", r.port)
