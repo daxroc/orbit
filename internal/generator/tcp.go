@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daxroc/orbit/internal/auth"
+	"github.com/daxroc/orbit/internal/debug"
 	"github.com/daxroc/orbit/internal/metrics"
 	"github.com/daxroc/orbit/internal/recorder"
 	"golang.org/x/time/rate"
@@ -94,12 +95,16 @@ func (g *TCPGenerator) Stop() error {
 }
 
 func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps int64) {
+	dialStart := time.Now()
+	slog.Debug("tcp dial attempt", "flow_id", g.flowID, "target", g.target, "conn_idx", idx)
 	conn, err := net.DialTimeout("tcp", g.target, 5*time.Second)
 	if err != nil {
 		slog.Error("tcp connect failed", "flow_id", g.flowID, "target", g.target, "error", err)
-		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonDialFailed)
 		return
 	}
+	slog.Debug("tcp dial success", "flow_id", g.flowID, "target", g.target,
+		"conn_idx", idx, "dial_ms", time.Since(dialStart).Milliseconds(), "local_addr", conn.LocalAddr())
 	defer func() {
 		if g.wireRec != nil {
 			g.wireRec.RemoveConn(conn, g.target, g.labels.Protocol)
@@ -122,9 +127,10 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 
 	if _, err := conn.Write(g.validator.HandshakeBytes()); err != nil {
 		slog.Error("tcp handshake failed", "flow_id", g.flowID, "error", err)
-		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonHandshakeFailed)
 		return
 	}
+	slog.Debug("tcp handshake sent", "flow_id", g.flowID, "bytes", len(g.validator.HandshakeBytes()))
 
 	buf := make([]byte, g.payload)
 	_, _ = rand.Read(buf)
@@ -145,13 +151,18 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 	for {
 		select {
 		case <-ctx.Done():
+			slog.Debug("tcp connection closed", "flow_id", g.flowID, "conn_idx", idx, "reason", ctx.Err())
 			return
 		default:
 		}
 
 		if limiter != nil {
+			waitStart := time.Now()
 			if err := limiter.Wait(ctx); err != nil {
 				return
+			}
+			if waited := time.Since(waitStart); waited > time.Millisecond {
+				slog.Debug("tcp rate limiter wait", "flow_id", g.flowID, "conn_idx", idx, "wait_ms", waited.Milliseconds())
 			}
 		}
 
@@ -161,8 +172,11 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 				return
 			}
 			slog.Warn("tcp write error", "flow_id", g.flowID, "error", err)
-			metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+			metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonWriteFailed)
 			return
+		}
+		if debug.IsEnabled(debug.ComponentTCPGenerator) {
+			slog.Debug("tcp write", "flow_id", g.flowID, "conn_idx", idx, "bytes", n)
 		}
 
 		metrics.AppBytesSent.WithLabelValues(

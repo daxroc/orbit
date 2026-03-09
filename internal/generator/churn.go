@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/daxroc/orbit/internal/auth"
+	"github.com/daxroc/orbit/internal/debug"
 	"github.com/daxroc/orbit/internal/metrics"
 	"github.com/daxroc/orbit/internal/recorder"
 	"golang.org/x/time/rate"
@@ -95,13 +96,21 @@ func (g *ChurnGenerator) Stop() error {
 }
 
 func (g *ChurnGenerator) churnOnce(ctx context.Context) {
+	dialStart := time.Now()
+	if debug.IsEnabled(debug.ComponentChurn) {
+		slog.Debug("churn dial attempt", "flow_id", g.flowID, "target", g.target)
+	}
 	conn, err := net.DialTimeout("tcp", g.target, 2*time.Second)
 	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
 		slog.Warn("churn connect failed", "flow_id", g.flowID, "error", err)
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonDialFailed)
 		return
+	}
+	if debug.IsEnabled(debug.ComponentChurn) {
+		slog.Debug("churn dial success", "flow_id", g.flowID, "dial_ms", time.Since(dialStart).Milliseconds())
 	}
 
 	g.recorder.AddConnection()
@@ -113,6 +122,7 @@ func (g *ChurnGenerator) churnOnce(ctx context.Context) {
 	).Inc()
 
 	if _, err := conn.Write(g.validator.HandshakeBytes()); err != nil {
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonHandshakeFailed)
 		conn.Close()
 		g.recorder.RemoveConnection()
 		metrics.AppConnectionsActive.WithLabelValues(
@@ -126,11 +136,17 @@ func (g *ChurnGenerator) churnOnce(ctx context.Context) {
 		g.labels.Scenario, g.labels.RunID, g.labels.FlowType, g.labels.Protocol, g.labels.Source, g.labels.Target, g.labels.Direction,
 	).Add(float64(len(g.validator.HandshakeBytes())))
 
+	if debug.IsEnabled(debug.ComponentChurn) {
+		slog.Debug("churn holding", "flow_id", g.flowID, "hold_ms", g.holdDuration.Milliseconds())
+	}
 	select {
 	case <-ctx.Done():
 	case <-time.After(g.holdDuration):
 	}
 
+	if debug.IsEnabled(debug.ComponentChurn) {
+		slog.Debug("churn closing", "flow_id", g.flowID)
+	}
 	if g.wireRec != nil {
 		g.wireRec.CollectTCPInfo(conn, g.target, g.labels.Protocol)
 		g.wireRec.RemoveConn(conn, g.target, g.labels.Protocol)

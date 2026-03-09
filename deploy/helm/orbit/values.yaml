@@ -30,6 +30,12 @@ config:
   activeScenario: ""
   scheduleLeaseTTL: 30s
   heartbeatInterval: 10s
+  debugComponents: []
+  ## Enable verbose per-component debug logging. Components: tcp-generator, tcp-receiver,
+  ## wire, churn, coordinator, discovery, all. Only effective when logLevel is debug.
+  # debugComponents:
+  #   - tcp-generator
+  #   - wire
 
 scenarios:
   baseline:

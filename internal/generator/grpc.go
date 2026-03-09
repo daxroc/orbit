@@ -71,6 +71,7 @@ func (g *GRPCGenerator) Start(ctx context.Context) error {
 		g.validator.GRPCStreamDialOption(),
 	)
 	if err != nil {
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonDialFailed)
 		return err
 	}
 	defer conn.Close()
@@ -105,6 +106,7 @@ func (g *GRPCGenerator) Start(ctx context.Context) error {
 				return nil
 			}
 			slog.Warn("grpc echo failed", "flow_id", g.flowID, "error", err)
+			metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonRPCFailed)
 			continue
 		}
 

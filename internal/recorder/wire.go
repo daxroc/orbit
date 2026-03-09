@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/daxroc/orbit/internal/debug"
 	"github.com/daxroc/orbit/internal/metrics"
 )
 
@@ -127,6 +128,17 @@ func (w *WireRecorder) CollectTCPInfo(conn net.Conn, target, protocol string) *T
 	if host, _, err := net.SplitHostPort(target); err == nil {
 		target = host
 	}
+
+	if debug.IsEnabled(debug.ComponentWire) {
+		slog.Debug("tcp_info collected",
+			"source", w.source, "target", target, "protocol", protocol,
+			"rtt_us", snapshot.RTT, "rtt_var_us", snapshot.RTTVar,
+			"cwnd", snapshot.SndCwnd, "mss", snapshot.SndMSS,
+			"bytes_sent", snapshot.BytesSent, "bytes_retrans", snapshot.BytesRetrans,
+			"retrans_segs", snapshot.RetransSegs, "lost", snapshot.Lost,
+		)
+	}
+
 	labels := []string{w.source, target, protocol}
 
 	metrics.WireRTT.WithLabelValues(labels...).Set(float64(snapshot.RTT) / 1e6)

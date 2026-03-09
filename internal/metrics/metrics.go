@@ -228,7 +228,7 @@ var (
 		Subsystem: "generator",
 		Name:      "errors_total",
 		Help:      "Generator errors per type/target.",
-	}, []string{"flow_type", "source", "target"})
+	}, []string{"flow_type", "source", "target", "reason"})
 
 	GeneratorLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "orbit",
@@ -250,5 +250,12 @@ var (
 		Subsystem: "receiver",
 		Name:      "connections_total",
 		Help:      "Connections accepted per type.",
+	}, []string{"receiver_type"})
+
+	ReceiverRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "orbit",
+		Subsystem: "receiver",
+		Name:      "requests_total",
+		Help:      "Requests handled per receiver type.",
 	}, []string{"receiver_type"})
 )

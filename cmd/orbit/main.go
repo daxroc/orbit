@@ -10,6 +10,7 @@ import (
 
 	"github.com/daxroc/orbit/internal/agent"
 	"github.com/daxroc/orbit/internal/config"
+	"github.com/daxroc/orbit/internal/debug"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/spf13/cobra"
@@ -52,6 +53,8 @@ func main() {
 	flags.String("leader-election-namespace", "", "Leader election namespace (defaults to ORBIT_NAMESPACE)")
 	flags.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flags.String("log-format", "json", "Log format (json, text)")
+	flags.StringSlice("debug-components", nil,
+		"Verbose debug for specific components: tcp-generator,tcp-receiver,wire,churn,coordinator,discovery,all")
 	flags.String("scenarios-config-path", "/etc/orbit/scenarios.yaml", "Path to scenarios config file")
 	flags.String("active-scenario", "", "Scenario to activate on leader election")
 	flags.Bool("metrics-protected", false, "Require auth token for /metrics endpoint")
@@ -110,6 +113,10 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 
 	setupLogging(cfg.LogLevel, cfg.LogFormat)
+
+	if comps, _ := cmd.Flags().GetStringSlice("debug-components"); len(comps) > 0 {
+		debug.Set(comps)
+	}
 
 	if err := cfg.Validate(); err != nil {
 		slog.Error("invalid configuration", "error", err)

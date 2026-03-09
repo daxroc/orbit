@@ -22,6 +22,7 @@ type HTTPReceiver struct {
 	validator *auth.TokenValidator
 	recorder  *recorder.AppRecorder
 	srv       *http.Server
+	bufPool   sync.Pool
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -32,6 +33,12 @@ func NewHTTPReceiver(port int, validator *auth.TokenValidator, rec *recorder.App
 		port:      port,
 		validator: validator,
 		recorder:  rec,
+		bufPool: sync.Pool{
+			New: func() any {
+				b := make([]byte, 0, 4096)
+				return &b
+			},
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -90,15 +97,39 @@ const maxEchoBodyBytes = 1 << 20
 func (r *HTTPReceiver) handleEcho(w http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 	req.Body = http.MaxBytesReader(w, req.Body, maxEchoBodyBytes)
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		http.Error(w, "read error", http.StatusBadRequest)
-		return
+
+	bufp := r.bufPool.Get().(*[]byte)
+	buf := (*bufp)[:0]
+	var body []byte
+	if req.ContentLength > 0 && req.ContentLength <= maxEchoBodyBytes {
+		if int64(cap(buf)) < req.ContentLength {
+			buf = make([]byte, req.ContentLength)
+		} else {
+			buf = buf[:req.ContentLength]
+		}
+		_, err := io.ReadFull(req.Body, buf)
+		if err != nil {
+			*bufp = buf[:0]
+			r.bufPool.Put(bufp)
+			http.Error(w, "read error", http.StatusBadRequest)
+			return
+		}
+		body = buf
+	} else {
+		var err error
+		body, err = io.ReadAll(req.Body)
+		if err != nil {
+			*bufp = buf[:0]
+			r.bufPool.Put(bufp)
+			http.Error(w, "read error", http.StatusBadRequest)
+			return
+		}
 	}
 
-	r.recorder.AddBytesReceived(int64(len(body)))
-	metrics.ReceiverBytes.WithLabelValues("http").Add(float64(len(body)))
-	metrics.ReceiverConnections.WithLabelValues("http").Inc()
+	bodyLen := len(body)
+	r.recorder.AddBytesReceived(int64(bodyLen))
+	metrics.ReceiverBytes.WithLabelValues("http").Add(float64(bodyLen))
+	metrics.ReceiverRequests.WithLabelValues("http").Inc()
 	source := netutil.StripPort(req.RemoteAddr)
 	target := netutil.StripPort(req.Host)
 
@@ -108,21 +139,33 @@ func (r *HTTPReceiver) handleEcho(w http.ResponseWriter, req *http.Request) {
 	// originating flow on the generator side.
 	metrics.AppBytesReceived.WithLabelValues(
 		"", "", "http", "http", source, target, "east-west",
-	).Add(float64(len(body)))
+	).Add(float64(bodyLen))
 
-	if csHeader := req.Header.Get("X-Orbit-Checksum"); csHeader != "" {
+	var responseCS string
+	csHeader := req.Header.Get("X-Orbit-Checksum")
+	if csHeader != "" {
 		expected, err := hex.DecodeString(csHeader)
-		if err == nil && !checksum.Verify(body, expected) {
-			flowID := req.Header.Get("X-Orbit-Flow-ID")
-			metrics.ChecksumErrors.WithLabelValues("http", "http", source, target).Inc()
-			slog.Warn("checksum mismatch", "flow_id", flowID, "source", source)
+		if err == nil {
+			if !checksum.Verify(body, expected) {
+				flowID := req.Header.Get("X-Orbit-Flow-ID")
+				metrics.ChecksumErrors.WithLabelValues("http", "http", source, target).Inc()
+				slog.Warn("checksum mismatch", "flow_id", flowID, "source", source)
+			} else {
+				responseCS = csHeader
+			}
 		}
+	}
+	if responseCS == "" {
+		responseCS = checksum.ComputeHex(body)
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Orbit-Flow-ID", req.Header.Get("X-Orbit-Flow-ID"))
-	w.Header().Set("X-Orbit-Checksum", checksum.ComputeHex(body))
+	w.Header().Set("X-Orbit-Checksum", responseCS)
 	n, _ := w.Write(body)
+
+	*bufp = body[:0]
+	r.bufPool.Put(bufp)
 
 	r.recorder.AddBytesSent(int64(n))
 	// Same as AppBytesReceived above: scenario/run_id are empty; correlate via

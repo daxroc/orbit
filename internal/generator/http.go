@@ -133,7 +133,7 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 	req, err := http.NewRequestWithContext(ctx, g.method, url, bytes.NewReader(payload))
 	if err != nil {
 		slog.Warn("http request create failed", "flow_id", g.flowID, "error", err)
-		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonRequestCreateFailed)
 		return
 	}
 	req.Header.Set("Authorization", g.validator.AuthorizationHeader())
@@ -149,7 +149,7 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 			return
 		}
 		slog.Warn("http request failed", "flow_id", g.flowID, "error", err)
-		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonRequestSendFailed)
 		return
 	}
 

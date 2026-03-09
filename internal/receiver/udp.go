@@ -58,7 +58,7 @@ func (r *UDPReceiver) Start(ctx context.Context) error {
 		r.conn.Close()
 	}()
 
-	tokenLen := len(r.validator.HandshakeBytes())
+	tokenLen := r.validator.TokenLen()
 	buf := make([]byte, 65535)
 
 	for {

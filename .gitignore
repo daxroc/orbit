@@ -11,3 +11,4 @@ vendor/
 *~
 example-values.yaml
 dockerhub-secret.yaml
+.worktrees/

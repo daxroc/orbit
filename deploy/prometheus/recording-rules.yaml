@@ -30,7 +30,7 @@ groups:
         expr: sum by (flow_type) (rate(orbit_generator_bytes_total[1m]))
 
       - record: orbit:generator_errors_per_second:sum
-        expr: sum by (flow_type) (rate(orbit_generator_errors_total[1m]))
+        expr: sum by (flow_type, reason) (rate(orbit_generator_errors_total[1m]))
 
       - record: orbit:generator_latency_p95:quantile
         expr: histogram_quantile(0.95, sum by (le, flow_type) (rate(orbit_generator_latency_seconds_bucket[5m])))

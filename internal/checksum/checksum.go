@@ -1,6 +1,7 @@
 package checksum
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 )
@@ -11,16 +12,7 @@ func Compute(data []byte) []byte {
 }
 
 func Verify(data, expected []byte) bool {
-	actual := Compute(data)
-	if len(actual) != len(expected) {
-		return false
-	}
-	for i := range actual {
-		if actual[i] != expected[i] {
-			return false
-		}
-	}
-	return true
+	return bytes.Equal(Compute(data), expected)
 }
 
 func ComputeHex(data []byte) string {

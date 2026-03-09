@@ -40,6 +40,9 @@ spec:
             - --udp-receiver-port-start={{ .Values.config.udpReceiverPortStart }}
             - --log-level={{ .Values.config.logLevel }}
             - --log-format={{ .Values.config.logFormat }}
+            {{- if .Values.config.debugComponents }}
+            - --debug-components={{ join "," .Values.config.debugComponents }}
+            {{- end }}
           env:
             - name: ORBIT_POD_NAME
               valueFrom:

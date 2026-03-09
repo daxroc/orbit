@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/daxroc/orbit/internal/auth"
+	"github.com/daxroc/orbit/internal/debug"
 	"github.com/daxroc/orbit/internal/metrics"
 	"github.com/daxroc/orbit/internal/netutil"
 	"github.com/daxroc/orbit/internal/recorder"
@@ -79,6 +80,8 @@ func (r *TCPReceiver) Stop() error {
 func (r *TCPReceiver) handleConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
+	slog.Debug("tcp connection accepted", "remote", conn.RemoteAddr(), "local", conn.LocalAddr())
+
 	tokenLen := len(r.validator.HandshakeBytes())
 	handshake := make([]byte, tokenLen)
 	if _, err := io.ReadFull(conn, handshake); err != nil {
@@ -89,6 +92,7 @@ func (r *TCPReceiver) handleConn(ctx context.Context, conn net.Conn) {
 		slog.Warn("tcp handshake failed: invalid token", "remote", conn.RemoteAddr())
 		return
 	}
+	slog.Debug("tcp handshake validated", "remote", conn.RemoteAddr())
 
 	r.recorder.AddConnection()
 	defer r.recorder.RemoveConnection()
@@ -116,6 +120,10 @@ func (r *TCPReceiver) handleConn(ctx context.Context, conn net.Conn) {
 				"", "", "tcp-stream", "tcp", source, target, "east-west",
 			).Add(float64(n))
 			metrics.ReceiverBytes.WithLabelValues("tcp").Add(float64(n))
+
+			if debug.IsEnabled(debug.ComponentTCPReceiver) {
+				slog.Debug("tcp read", "remote", conn.RemoteAddr(), "bytes", n)
+			}
 
 			if _, werr := conn.Write([]byte{0}); werr != nil {
 				return
