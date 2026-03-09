@@ -13,6 +13,7 @@ import (
 	"github.com/daxroc/orbit/internal/auth"
 	"github.com/daxroc/orbit/internal/checksum"
 	"github.com/daxroc/orbit/internal/metrics"
+	"github.com/daxroc/orbit/internal/netutil"
 	"github.com/daxroc/orbit/internal/recorder"
 )
 
@@ -51,10 +52,19 @@ func NewHTTPReceiver(port int, validator *auth.TokenValidator, rec *recorder.App
 func (r *HTTPReceiver) Type() string { return "http-echo" }
 
 func (r *HTTPReceiver) Start(ctx context.Context) error {
-	_, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	r.mu.Lock()
 	r.cancel = cancel
 	r.mu.Unlock()
+
+	// Stop the server when the context is cancelled so that callers can use
+	// context cancellation (in addition to Stop()) to shut down the receiver.
+	go func() {
+		<-ctx.Done()
+		if err := r.Stop(); err != nil {
+			slog.Error("HTTP receiver stop error", "err", err)
+		}
+	}()
 
 	slog.Info("HTTP echo receiver listening", "port", r.port)
 	if err := r.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -89,9 +99,13 @@ func (r *HTTPReceiver) handleEcho(w http.ResponseWriter, req *http.Request) {
 	r.recorder.AddBytesReceived(int64(len(body)))
 	metrics.ReceiverBytes.WithLabelValues("http").Add(float64(len(body)))
 	metrics.ReceiverConnections.WithLabelValues("http").Inc()
-	source := stripPort(req.RemoteAddr)
-	target := stripPort(req.Host)
+	source := netutil.StripPort(req.RemoteAddr)
+	target := netutil.StripPort(req.Host)
 
+	// scenario and run_id labels are intentionally empty here: the receiver does
+	// not know which scenario or run produced the request. Use the X-Orbit-Flow-ID
+	// header (set by the generator) to correlate receiver-side metrics with the
+	// originating flow on the generator side.
 	metrics.AppBytesReceived.WithLabelValues(
 		"", "", "http", "http", source, target, "east-west",
 	).Add(float64(len(body)))
@@ -111,6 +125,8 @@ func (r *HTTPReceiver) handleEcho(w http.ResponseWriter, req *http.Request) {
 	n, _ := w.Write(body)
 
 	r.recorder.AddBytesSent(int64(n))
+	// Same as AppBytesReceived above: scenario/run_id are empty; correlate via
+	// X-Orbit-Flow-ID on the generator side.
 	metrics.AppBytesSent.WithLabelValues(
 		"", "", "http", "http", target, source, "east-west",
 	).Add(float64(n))

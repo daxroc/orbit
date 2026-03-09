@@ -9,6 +9,7 @@ import (
 
 	"github.com/daxroc/orbit/internal/auth"
 	"github.com/daxroc/orbit/internal/metrics"
+	"github.com/daxroc/orbit/internal/netutil"
 	"github.com/daxroc/orbit/internal/recorder"
 )
 
@@ -79,8 +80,8 @@ func (r *UDPReceiver) Start(ctx context.Context) error {
 		r.recorder.AddPacketsReceived(1)
 		metrics.ReceiverBytes.WithLabelValues("udp").Add(float64(n))
 
-		source := stripPort(remoteAddr.String())
-		target := stripPort(r.conn.LocalAddr().String())
+		source := netutil.StripPort(remoteAddr.String())
+		target := netutil.StripPort(r.conn.LocalAddr().String())
 		metrics.AppBytesReceived.WithLabelValues(
 			"", "", "udp-stream", "udp", source, target, "east-west",
 		).Add(float64(n))

@@ -55,6 +55,8 @@ func main() {
 	flags.String("scenarios-config-path", "/etc/orbit/scenarios.yaml", "Path to scenarios config file")
 	flags.String("active-scenario", "", "Scenario to activate on leader election")
 	flags.Bool("metrics-protected", false, "Require auth token for /metrics endpoint")
+	flags.Bool("tls-enabled", false, "enable TLS for leader→peer gRPC connections")
+	flags.String("tls-ca-file", "", "path to CA certificate file for TLS verification (empty = system pool)")
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -99,6 +101,12 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 	if v, _ := cmd.Flags().GetBool("metrics-protected"); v {
 		cfg.MetricsProtected = v
+	}
+	if v, _ := cmd.Flags().GetBool("tls-enabled"); v {
+		cfg.TLSEnabled = v
+	}
+	if v, _ := cmd.Flags().GetString("tls-ca-file"); v != "" {
+		cfg.TLSCAFile = v
 	}
 
 	setupLogging(cfg.LogLevel, cfg.LogFormat)

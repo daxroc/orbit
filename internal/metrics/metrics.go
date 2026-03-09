@@ -1,5 +1,11 @@
 package metrics
 
+// NOTE: run_id is used as a Prometheus label on high-cardinality metrics.
+// Each scenario activation creates a new timestamp-based run_id, permanently
+// adding new timeseries. For long-running deployments with frequent scenario
+// activations, tune Prometheus TSDB retention or --query.max-samples limits
+// to avoid OOM. See README.md "Operational Notes" for guidance.
+
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"

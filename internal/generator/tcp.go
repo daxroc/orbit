@@ -129,6 +129,10 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 	buf := make([]byte, g.payload)
 	_, _ = rand.Read(buf)
 
+	// Pre-allocate the ACK read buffer outside the send loop to avoid a
+	// one-byte heap allocation on every iteration.
+	var ack [1]byte
+
 	var limiter *rate.Limiter
 	if bandwidthBps > 0 {
 		limiter = rate.NewLimiter(rate.Limit(float64(bandwidthBps)/float64(g.payload)), 10)
@@ -179,7 +183,7 @@ func (g *TCPGenerator) runConnection(ctx context.Context, idx int, bandwidthBps 
 			}
 		}
 
-		_, _ = io.ReadFull(conn, make([]byte, 1))
+		_, _ = io.ReadFull(conn, ack[:])
 	}
 }
 

@@ -16,7 +16,6 @@ import (
 const (
 	HeaderAuthorization = "authorization"
 	BearerPrefix        = "Bearer "
-	HandshakeLen        = 64
 )
 
 type TokenValidator struct {

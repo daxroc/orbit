@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -53,6 +55,11 @@ type Config struct {
 	ScheduleLeaseTTL  time.Duration `mapstructure:"schedule-lease-ttl"`
 	HeartbeatInterval time.Duration `mapstructure:"heartbeat-interval"`
 
+	TLSEnabled bool   `mapstructure:"tls-enabled"`
+	TLSCAFile  string `mapstructure:"tls-ca-file"`
+
+	// TODO: ExternalTargets is a planned future feature for driving traffic to
+	// arbitrary external endpoints not registered as named satellites.
 	ExternalTargets []ExternalTarget `mapstructure:"external-targets"`
 }
 
@@ -209,7 +216,12 @@ func Load() (*Config, error) {
 	viper.SetEnvPrefix("ORBIT")
 	viper.AutomaticEnv()
 
-	_ = viper.ReadInConfig()
+	if err := viper.ReadInConfig(); err != nil {
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
+			slog.Warn("failed to read config file", "error", err)
+		}
+	}
 
 	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)

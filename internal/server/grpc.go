@@ -85,7 +85,17 @@ func (s *GRPCServer) Start() error {
 
 func (s *GRPCServer) Stop() {
 	slog.Info("stopping gRPC server")
-	s.srv.GracefulStop()
+	stopped := make(chan struct{})
+	go func() {
+		s.srv.GracefulStop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		slog.Warn("gRPC server GracefulStop timed out, forcing stop")
+		s.srv.Stop()
+	}
 }
 
 func (s *GRPCServer) Echo(_ context.Context, req *orbitv1.EchoRequest) (*orbitv1.EchoResponse, error) {
@@ -97,6 +107,10 @@ func (s *GRPCServer) Echo(_ context.Context, req *orbitv1.EchoRequest) (*orbitv1
 	}, nil
 }
 
+// TODO: Register is intended for future use where peers explicitly register with
+// the leader on startup. Currently, peer discovery is handled via the Kubernetes
+// EndpointSlice API and this RPC is not invoked. Returns Accepted: false when
+// no callback is configured.
 func (s *GRPCServer) Register(ctx context.Context, req *orbitv1.PeerRegistration) (*orbitv1.PeerRegistrationResponse, error) {
 	s.mu.RLock()
 	fn := s.onRegister
@@ -119,6 +133,10 @@ func (s *GRPCServer) AssignSchedule(ctx context.Context, req *orbitv1.ProbeSched
 	return fn(ctx, req)
 }
 
+// TODO: ReportStatus is intended for future use where peers push status reports
+// to the leader (active flows, bytes transferred, etc.) for central aggregation.
+// Currently not invoked by any generator. Returns Acknowledged: false when no
+// callback is configured.
 func (s *GRPCServer) ReportStatus(ctx context.Context, req *orbitv1.StatusReport) (*orbitv1.StatusReportResponse, error) {
 	s.mu.RLock()
 	fn := s.onStatusReport
@@ -130,6 +148,9 @@ func (s *GRPCServer) ReportStatus(ctx context.Context, req *orbitv1.StatusReport
 	return fn(ctx, req)
 }
 
+// TODO: StreamData is intended for bidirectional payload streaming between peers
+// (e.g. large payload echo or sustained gRPC bandwidth tests). No generator
+// currently invokes this RPC; it echoes received chunks back as a placeholder.
 func (s *GRPCServer) StreamData(stream orbitv1.OrbitService_StreamDataServer) error {
 	for {
 		chunk, err := stream.Recv()

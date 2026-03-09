@@ -74,6 +74,10 @@ func (e *Election) Run(ctx context.Context) {
 				if e.callbacks.OnStoppedLeading != nil {
 					e.callbacks.OnStoppedLeading()
 				}
+				// Intentional Kubernetes leader-election pattern: exit immediately so
+				// Kubernetes restarts the pod and triggers a new election. Performing a
+				// full graceful shutdown here would delay pod restart while the new leader
+				// may have already redistributed schedules, causing a gap in coverage.
 				os.Exit(0)
 			},
 			OnNewLeader: func(identity string) {

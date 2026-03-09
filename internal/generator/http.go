@@ -63,7 +63,7 @@ func NewHTTPGenerator(flowID string, labels Labels, target string, rps, payloadB
 		validator:    validator,
 		recorder:     rec,
 		bufPool: sync.Pool{
-			New: func() any { return make([]byte, 0, payloadBytes*2) },
+			New: func() any { b := make([]byte, 0, payloadBytes*2); return &b },
 		},
 	}
 }
@@ -153,9 +153,10 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 		return
 	}
 
-	buf := g.bufPool.Get().([]byte)
-	buf = buf[:0]
-	buf, _ = io.ReadAll(io.LimitReader(resp.Body, int64(g.payloadBytes*2)))
+	bufp := g.bufPool.Get().(*[]byte)
+	buf := (*bufp)[:cap(*bufp)]
+	n, _ := io.ReadFull(resp.Body, buf)
+	buf = buf[:n]
 	resp.Body.Close()
 
 	if csHeader := resp.Header.Get("X-Orbit-Checksum"); csHeader != "" {
@@ -185,5 +186,6 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 	metrics.GeneratorBytes.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Add(float64(len(payload)))
 	metrics.GeneratorLatency.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Observe(elapsed.Seconds())
 
-	g.bufPool.Put(buf[:0])
+	*bufp = buf[:0]
+	g.bufPool.Put(bufp)
 }

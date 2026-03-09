@@ -10,6 +10,7 @@ import (
 
 	"github.com/daxroc/orbit/internal/auth"
 	"github.com/daxroc/orbit/internal/metrics"
+	"github.com/daxroc/orbit/internal/netutil"
 	"github.com/daxroc/orbit/internal/recorder"
 )
 
@@ -93,8 +94,8 @@ func (r *TCPReceiver) handleConn(ctx context.Context, conn net.Conn) {
 	defer r.recorder.RemoveConnection()
 	metrics.ReceiverConnections.WithLabelValues("tcp").Inc()
 
-	source := stripPort(conn.RemoteAddr().String())
-	target := stripPort(conn.LocalAddr().String())
+	source := netutil.StripPort(conn.RemoteAddr().String())
+	target := netutil.StripPort(conn.LocalAddr().String())
 	labels := []string{"", "", "tcp-stream", "tcp", source, target}
 
 	metrics.AppConnectionsActive.WithLabelValues(labels...).Inc()
