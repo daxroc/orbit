@@ -382,6 +382,21 @@ orbit/
 └── go.mod
 ```
 
+## Operational Notes
+
+### Prometheus Cardinality (run_id label)
+
+Several high-cardinality metrics (`orbit_app_bytes_sent_total`, `orbit_app_bytes_received_total`, `orbit_app_connections_total`, etc.) carry a `run_id` label. Each scenario activation generates a new timestamp-based `run_id` (e.g. `steady-low-1712345678901`), creating a permanently new set of Prometheus timeseries.
+
+In long-running deployments with frequent scenario activations, this causes unbounded timeseries growth in the Prometheus TSDB, which can eventually lead to OOM or degraded query performance.
+
+Recommended mitigations:
+
+- **Set a short TSDB retention window** — `--storage.tsdb.retention.time=7d` (or match your alerting lookback window). Old `run_id` timeseries will be evicted after retention expires.
+- **Tune `--query.max-samples`** — The default (`50000000`) may be hit by range queries over many `run_id` values. Raise or lower based on available RAM.
+- **Limit scenario churn** — Avoid activating new scenarios more often than needed. Each activation creates a new `run_id`.
+- **Use recording rules** — Pre-aggregate high-cardinality series in `deploy/prometheus/recording-rules.yaml` to reduce query-time cardinality.
+
 ## License
 
 [Apache License 2.0](LICENSE)

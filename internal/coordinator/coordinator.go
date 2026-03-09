@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"math"
@@ -14,6 +15,8 @@ import (
 	"github.com/daxroc/orbit/internal/discovery"
 	orbitv1 "github.com/daxroc/orbit/proto/orbit/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -32,9 +35,11 @@ type PortConfig struct {
 }
 
 type Coordinator struct {
-	selfID    string
-	validator *auth.TokenValidator
-	ports     PortConfig
+	selfID     string
+	validator  *auth.TokenValidator
+	ports      PortConfig
+	tlsEnabled bool
+	tlsCAFile  string
 
 	mu           sync.RWMutex
 	peers        map[string]*discovery.Peer
@@ -42,6 +47,7 @@ type Coordinator struct {
 	active       bool
 	runID        string
 	scenarioName string
+	clients      map[string]*grpc.ClientConn
 
 	nsAssignments  map[string][]*orbitv1.FlowSpec
 	nsFlows        []*orbitv1.FlowSpec
@@ -59,7 +65,15 @@ func New(selfID string, validator *auth.TokenValidator, ports PortConfig) *Coord
 		ports:       ports,
 		peers:       make(map[string]*discovery.Peer),
 		assignments: make(map[string]*FlowAssignment),
+		clients:     make(map[string]*grpc.ClientConn),
 	}
+}
+
+func NewWithTLS(selfID string, validator *auth.TokenValidator, ports PortConfig, tlsEnabled bool, tlsCAFile string) *Coordinator {
+	c := New(selfID, validator, ports)
+	c.tlsEnabled = tlsEnabled
+	c.tlsCAFile = tlsCAFile
+	return c
 }
 
 func (c *Coordinator) IsActive() bool {
@@ -77,6 +91,13 @@ func (c *Coordinator) SetActive(active bool) {
 func (c *Coordinator) UpdatePeers(peers map[string]*discovery.Peer) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Close connections for peers that are no longer present.
+	for peerID, conn := range c.clients {
+		if _, ok := peers[peerID]; !ok {
+			conn.Close()
+			delete(c.clients, peerID)
+		}
+	}
 	c.peers = peers
 }
 
@@ -136,15 +157,43 @@ func (c *Coordinator) DistributeSchedule(ctx context.Context, scenarioName strin
 			flows = assignment.Flows
 		}
 
-		conn, err := grpc.NewClient(peer.Address,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			c.validator.GRPCDialOption(),
-			c.validator.GRPCStreamDialOption(),
-		)
-		if err != nil {
-			slog.Error("failed to connect to peer", "peer", peerID, "error", err)
-			continue
+		c.mu.Lock()
+		conn, ok := c.clients[peerID]
+		if !ok || conn.GetState() == connectivity.Shutdown {
+			// Select transport credentials based on TLS configuration.
+			// Credentials are determined once per connection and reused for all
+			// subsequent heartbeats to that peer.
+			var creds credentials.TransportCredentials
+			if c.tlsEnabled {
+				if c.tlsCAFile != "" {
+					var err error
+					creds, err = credentials.NewClientTLSFromFile(c.tlsCAFile, "")
+					if err != nil {
+						slog.Error("failed to load TLS CA file", "error", err)
+						c.mu.Unlock()
+						continue
+					}
+				} else {
+					creds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+				}
+			} else {
+				creds = insecure.NewCredentials()
+			}
+
+			var err error
+			conn, err = grpc.NewClient(peer.Address,
+				grpc.WithTransportCredentials(creds),
+				c.validator.GRPCDialOption(),
+				c.validator.GRPCStreamDialOption(),
+			)
+			if err != nil {
+				slog.Error("failed to connect to peer", "peer", peerID, "error", err)
+				c.mu.Unlock()
+				continue
+			}
+			c.clients[peerID] = conn
 		}
+		c.mu.Unlock()
 
 		client := orbitv1.NewOrbitServiceClient(conn)
 		var nsFlows []*orbitv1.FlowSpec
@@ -161,7 +210,6 @@ func (c *Coordinator) DistributeSchedule(ctx context.Context, scenarioName strin
 		}
 
 		resp, err := client.AssignSchedule(ctx, schedule)
-		_ = conn.Close()
 
 		if err != nil {
 			slog.Error("failed to assign schedule", "peer", peerID, "error", err)
@@ -205,6 +253,16 @@ func (c *Coordinator) ClearAndDistribute(ctx context.Context) error {
 	c.nsFlows = nil
 	c.mu.Unlock()
 	return c.DistributeSchedule(ctx, "", make(map[string]*FlowAssignment))
+}
+
+// Close closes all persistent peer client connections.
+func (c *Coordinator) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for peerID, conn := range c.clients {
+		conn.Close()
+		delete(c.clients, peerID)
+	}
 }
 
 func (c *Coordinator) BuildNorthSouthAssignments(dist config.NorthSouthDistribution, nsFlows []*orbitv1.FlowSpec) {

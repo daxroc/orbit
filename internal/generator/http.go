@@ -154,8 +154,9 @@ func (g *HTTPGenerator) sendRequest(ctx context.Context, client *http.Client, pa
 	}
 
 	buf := g.bufPool.Get().([]byte)
-	buf = buf[:0]
-	buf, _ = io.ReadAll(io.LimitReader(resp.Body, int64(g.payloadBytes*2)))
+	buf = buf[:cap(buf)]
+	n, _ := io.ReadFull(resp.Body, buf)
+	buf = buf[:n]
 	resp.Body.Close()
 
 	if csHeader := resp.Header.Get("X-Orbit-Checksum"); csHeader != "" {

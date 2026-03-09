@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"sync"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/daxroc/orbit/internal/election"
 	"github.com/daxroc/orbit/internal/generator"
 	"github.com/daxroc/orbit/internal/metrics"
+	"github.com/daxroc/orbit/internal/netutil"
 	"github.com/daxroc/orbit/internal/receiver"
 	"github.com/daxroc/orbit/internal/recorder"
 	"github.com/daxroc/orbit/internal/scenario"
@@ -24,14 +24,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
-
-func stripPort(addr string) string {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr
-	}
-	return host
-}
 
 type Agent struct {
 	cfg         *config.Config
@@ -83,12 +75,12 @@ func New(cfg *config.Config) (*Agent, error) {
 	a.genMgr = generator.NewManager(appRec)
 	a.recvMgr = receiver.NewManager(validator, appRec)
 
-	a.coord = coordinator.New(cfg.PodName, validator, coordinator.PortConfig{
+	a.coord = coordinator.NewWithTLS(cfg.PodName, validator, coordinator.PortConfig{
 		GRPC:             cfg.GRPCPort,
 		HTTPEcho:         cfg.HTTPPort + 1,
 		TCPReceiverStart: cfg.TCPReceiverPortStart,
 		UDPReceiverStart: cfg.UDPReceiverPortStart,
-	})
+	}, cfg.TLSEnabled, cfg.TLSCAFile)
 
 	return a, nil
 }
@@ -158,6 +150,7 @@ func (a *Agent) Stop(ctx context.Context) {
 	}
 	a.genMgr.StopAll()
 	a.recvMgr.StopAll()
+	a.coord.Close()
 	a.grpcServer.Stop()
 
 	if err := a.httpServer.Stop(ctx); err != nil {
@@ -433,6 +426,10 @@ func (a *Agent) onStoppedLeading() {
 	a.stopHeartbeat()
 	metrics.LeaderInfo.WithLabelValues(a.cfg.PodName).Set(0)
 	a.coord.SetActive(false)
+	// Intentionally stop all generators and clear state before the process exits
+	// (election.go calls os.Exit(0) immediately after this callback). Stopping
+	// generators here allows the OS/kernel to clean up network connections on exit,
+	// avoiding duplicate traffic from a pod that is no longer the leader.
 	a.genMgr.StopAll()
 }
 
@@ -499,7 +496,7 @@ func (a *Agent) createGeneratorFromFlowSpec(flow *orbitv1.FlowSpec, scenarioName
 		FlowType:  flow.Type,
 		Protocol:  flow.Type,
 		Source:    a.cfg.PodName,
-		Target:    stripPort(flow.TargetAddress),
+		Target:    netutil.StripPort(flow.TargetAddress),
 		Direction: direction,
 	}
 
@@ -567,37 +564,34 @@ func (a *Agent) runStandaloneMode(ctx context.Context) {
 	if scenarioName != "" {
 		sc, ok := a.scenEngine.Get(scenarioName)
 		if ok {
-			slog.Info("starting standalone scenario", "scenario", scenarioName)
-			a.scenEngine.SetActive(scenarioName, fmt.Sprintf("%s-%d", scenarioName, time.Now().UnixMilli()))
+			runID := fmt.Sprintf("%s-%d", scenarioName, time.Now().UnixMilli())
+			slog.Info("starting standalone scenario", "scenario", scenarioName, "run_id", runID)
+			a.scenEngine.SetActive(scenarioName, runID)
 
+			// Build FlowSpec values from the scenario's east-west flows and route
+			// each one to the appropriate local receiver, then create generators
+			// using the same factory as the cluster path to avoid divergence.
 			for i, f := range sc.EastWest {
-				labels := generator.Labels{
-					Scenario:  scenarioName,
-					RunID:     scenarioName,
-					FlowType:  f.Type,
-					Protocol:  f.Type,
-					Source:    a.cfg.PodName,
-					Target:    fmt.Sprintf("localhost:%d", a.cfg.TCPReceiverPortStart+i),
-					Direction: "east-west",
+				var targetAddr string
+				switch f.Type {
+				case "tcp-stream", "connection-churn":
+					targetAddr = fmt.Sprintf("localhost:%d", a.cfg.TCPReceiverPortStart)
+				case "udp-stream":
+					targetAddr = fmt.Sprintf("localhost:%d", a.cfg.UDPReceiverPortStart)
+				case "http":
+					targetAddr = fmt.Sprintf("localhost:%d", a.cfg.HTTPPort+1)
+				case "grpc":
+					targetAddr = fmt.Sprintf("localhost:%d", a.cfg.GRPCPort)
+				default:
+					targetAddr = fmt.Sprintf("localhost:%d", a.cfg.TCPReceiverPortStart)
 				}
 
-				var gen generator.Generator
-				switch f.Type {
-				case "tcp-stream":
-					gen = generator.NewTCPGenerator(
-						fmt.Sprintf("standalone-%d", i), labels,
-						fmt.Sprintf("localhost:%d", a.cfg.TCPReceiverPortStart),
-						int64(f.BandwidthMbps)*1_000_000, f.PayloadBytes, f.Connections,
-						time.Duration(f.DurationSeconds)*time.Second, f.Pattern, a.validator, a.appRec, a.wireRec,
-					)
-				case "udp-stream":
-					gen = generator.NewUDPGenerator(
-						fmt.Sprintf("standalone-%d", i), labels,
-						fmt.Sprintf("localhost:%d", a.cfg.UDPReceiverPortStart),
-						f.PacketRate, f.PacketSize,
-						time.Duration(f.DurationSeconds)*time.Second, a.validator, a.appRec,
-					)
-				default:
+				spec := flowDefToFlowSpec(f, i, targetAddr, "east-west")
+				// Override id to indicate standalone origin.
+				spec.Id = fmt.Sprintf("standalone-%d", i)
+
+				gen := a.createGeneratorFromFlowSpec(spec, scenarioName, runID)
+				if gen == nil {
 					slog.Warn("standalone mode: unsupported flow type, skipping", "type", f.Type)
 					continue
 				}

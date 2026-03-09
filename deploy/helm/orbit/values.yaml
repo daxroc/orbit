@@ -225,6 +225,10 @@ tolerations: []
 
 affinity: {}
 
+tls:
+  enabled: false
+  caFile: ""   # path to CA cert, mounted via secret/configmap
+
 satellite:
   enabled: false
   replicaCount: 1
