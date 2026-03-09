@@ -104,14 +104,14 @@ func (g *ICMPGenerator) ping(conn *icmp.PacketConn, dst *net.IPAddr, seq int) {
 	wb, err := msg.Marshal(nil)
 	if err != nil {
 		slog.Warn("icmp marshal error", "flow_id", g.flowID, "error", err)
-		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonMarshalFailed)
 		return
 	}
 
 	start := time.Now()
 	if _, err := conn.WriteTo(wb, dst); err != nil {
 		slog.Warn("icmp write error", "flow_id", g.flowID, "error", err)
-		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonWriteFailed)
 		return
 	}
 
@@ -130,7 +130,7 @@ func (g *ICMPGenerator) ping(conn *icmp.PacketConn, dst *net.IPAddr, seq int) {
 	n, _, err := conn.ReadFrom(rb)
 	if err != nil {
 		slog.Warn("icmp read error", "flow_id", g.flowID, "error", err)
-		metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+		metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonReadFailed)
 		return
 	}
 

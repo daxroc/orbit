@@ -98,7 +98,7 @@ func (g *UDPGenerator) Start(ctx context.Context) error {
 				return nil
 			}
 			slog.Warn("udp write error", "flow_id", g.flowID, "error", err)
-			metrics.GeneratorErrors.WithLabelValues(g.labels.FlowType, g.labels.Source, g.labels.Target).Inc()
+			metrics.RecordGeneratorError(g.labels.FlowType, g.labels.Source, g.labels.Target, metrics.ReasonWriteFailed)
 			continue
 		}
 

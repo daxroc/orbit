@@ -228,7 +228,7 @@ var (
 		Subsystem: "generator",
 		Name:      "errors_total",
 		Help:      "Generator errors per type/target.",
-	}, []string{"flow_type", "source", "target"})
+	}, []string{"flow_type", "source", "target", "reason"})
 
 	GeneratorLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "orbit",
