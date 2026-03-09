@@ -251,4 +251,11 @@ var (
 		Name:      "connections_total",
 		Help:      "Connections accepted per type.",
 	}, []string{"receiver_type"})
+
+	ReceiverRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "orbit",
+		Subsystem: "receiver",
+		Name:      "requests_total",
+		Help:      "Requests handled per receiver type.",
+	}, []string{"receiver_type"})
 )

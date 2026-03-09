@@ -43,6 +43,10 @@ func (v *TokenValidator) HandshakeBytes() []byte {
 	return b
 }
 
+func (v *TokenValidator) TokenLen() int {
+	return len(v.token)
+}
+
 func (v *TokenValidator) HTTPMiddleware(protectMetrics bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
