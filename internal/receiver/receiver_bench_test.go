@@ -31,7 +31,9 @@ func BenchmarkHTTPEchoHandler(b *testing.B) {
 			r, v := newTestHTTPReceiver()
 
 			payload := make([]byte, size)
-			rand.Read(payload)
+			if _, err := rand.Read(payload); err != nil {
+				b.Fatal(err)
+			}
 			cs := checksum.ComputeHex(payload)
 
 			b.SetBytes(int64(size))
@@ -62,7 +64,9 @@ func BenchmarkHTTPEchoE2E(b *testing.B) {
 			defer ts.Close()
 
 			payload := make([]byte, size)
-			rand.Read(payload)
+			if _, err := rand.Read(payload); err != nil {
+				b.Fatal(err)
+			}
 			cs := checksum.ComputeHex(payload)
 
 			client := ts.Client()
@@ -79,7 +83,7 @@ func BenchmarkHTTPEchoE2E(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				io.Copy(io.Discard, resp.Body)
+				_, _ = io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 			}
 		})
@@ -96,7 +100,9 @@ func BenchmarkHTTPEchoParallel(b *testing.B) {
 			defer ts.Close()
 
 			payload := make([]byte, size)
-			rand.Read(payload)
+			if _, err := rand.Read(payload); err != nil {
+				b.Fatal(err)
+			}
 			cs := checksum.ComputeHex(payload)
 
 			transport := &http.Transport{
@@ -118,7 +124,7 @@ func BenchmarkHTTPEchoParallel(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					io.Copy(io.Discard, resp.Body)
+					_, _ = io.Copy(io.Discard, resp.Body)
 					resp.Body.Close()
 				}
 			})
@@ -161,10 +167,14 @@ func BenchmarkTCPReceiverThroughput(b *testing.B) {
 			defer conn.Close()
 
 			token := v.HandshakeBytes()
-			conn.Write(token)
+			if _, err := conn.Write(token); err != nil {
+				b.Fatal(err)
+			}
 
 			payload := make([]byte, size)
-			rand.Read(payload)
+			if _, err := rand.Read(payload); err != nil {
+				b.Fatal(err)
+			}
 
 			// drain ACK bytes from receiver
 			go func() {
@@ -193,7 +203,9 @@ func BenchmarkChecksumCompute(b *testing.B) {
 	for _, size := range []int{512, 4096, 65536} {
 		b.Run(fmt.Sprintf("size_%d", size), func(b *testing.B) {
 			data := make([]byte, size)
-			rand.Read(data)
+			if _, err := rand.Read(data); err != nil {
+				b.Fatal(err)
+			}
 			b.SetBytes(int64(size))
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -209,7 +221,9 @@ func BenchmarkChecksumVerify(b *testing.B) {
 	for _, size := range []int{512, 4096} {
 		b.Run(fmt.Sprintf("size_%d", size), func(b *testing.B) {
 			data := make([]byte, size)
-			rand.Read(data)
+			if _, err := rand.Read(data); err != nil {
+				b.Fatal(err)
+			}
 			expected := checksum.Compute(data)
 			b.SetBytes(int64(size))
 			b.ResetTimer()
@@ -226,7 +240,9 @@ func BenchmarkChecksumComputeHex(b *testing.B) {
 	for _, size := range []int{512, 4096} {
 		b.Run(fmt.Sprintf("size_%d", size), func(b *testing.B) {
 			data := make([]byte, size)
-			rand.Read(data)
+			if _, err := rand.Read(data); err != nil {
+				b.Fatal(err)
+			}
 			b.SetBytes(int64(size))
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -240,12 +256,14 @@ func BenchmarkChecksumComputeHex(b *testing.B) {
 // BenchmarkChecksumHexDecode benchmarks hex decoding of incoming checksum header.
 func BenchmarkChecksumHexDecode(b *testing.B) {
 	data := make([]byte, 4096)
-	rand.Read(data)
+	if _, err := rand.Read(data); err != nil {
+		b.Fatal(err)
+	}
 	hexStr := checksum.ComputeHex(data)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		hex.DecodeString(hexStr)
+		_, _ = hex.DecodeString(hexStr)
 	}
 }
 
@@ -276,6 +294,6 @@ func BenchmarkNetutilStripPort(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		net.SplitHostPort(addr)
+		_, _, _ = net.SplitHostPort(addr)
 	}
 }
