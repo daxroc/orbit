@@ -1,0 +1,25 @@
+name: Helm
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'deploy/helm/**'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/helm/**'
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Helm lint
+        run: make helm-lint
+
+      - name: Helm template
+        run: make helm-template
