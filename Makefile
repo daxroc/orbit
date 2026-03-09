@@ -17,6 +17,9 @@ help: ## Show this help
 build: ## Build linux binary
 	CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w $(LDFLAGS)" -o bin/$(BINARY) ./cmd/orbit
 
+build-orbctl: ## Build orbctl linux binary
+	CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w $(LDFLAGS)" -o bin/orbctl ./cmd/orbctl
+
 build-local: ## Build binary for current OS
 	go build -ldflags="$(LDFLAGS)" -o bin/$(BINARY) ./cmd/orbit
 
